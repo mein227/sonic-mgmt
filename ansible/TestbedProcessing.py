@@ -859,7 +859,7 @@ def main():
     # Load Data
     print("LOADING PROCESS STARTED")
     print("LOADING: " + args.i)
-    doc = yaml.load(open(args.i, 'r'))
+    doc = yaml.load(open(args.i, 'r'), Loader=yaml.FullLoader)
     devices = dict()                                        # dictionary contains information about devices
     generateDictionary(doc, devices, "devices")             # load devices
     veos = dict()                                           # dictionary contains information about veos

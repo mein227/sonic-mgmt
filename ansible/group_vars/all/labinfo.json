@@ -10,7 +10,14 @@
         "Arista-VM": "Arista",
         "Nexus-3064-NX": "Nexus",
         "Force10-S6100": "Force10",
-        "Force10-S6000": "Force10"
+        "Force10-S6000": "Force10",
+        "Seastone-DX010": "Smis",
+        "Supermicro_t7032": "Sonic",
+        "Arista-7032DX4-32": "Arista",
+        "DellEMC-Z9332f-O32": "Sonic",
+        "Seastone_2": "Sonic",
+		"sse_g3748": "Sonic",
+		"Supermicro_sse_t7132s": "Sonic"
     },
     "switch_login": {
         "Nexus": { 
@@ -27,6 +34,16 @@
             "user": "admin",
             "passwd": ["password"],
             "enable": ["password"] 
+        },
+        "Sonic": {
+            "user": "admin",
+            "passwd": ["YourPaSsWoRd", "password"],
+            "enable": null
+        },
+        "Smis": {
+            "user": "ADMIN",
+            "passwd": ["ADMIN"],
+            "enable": null
         }
     }
 }

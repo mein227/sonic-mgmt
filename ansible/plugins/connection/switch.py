@@ -127,6 +127,12 @@ class Connection(ConnectionBase):
                     self.sku = 'dell'
                 elif 'aos' in self.os_name:
                     self.sku = 'aos'
+                elif 'C3632S' in client.before:
+                    self.sku = 'smis'
+                elif 'SSE-G3648B' in client.before:
+                    self.sku = 'smis'
+                elif 'marvell' in client.before:
+                    self.sku = 'smis'
                 else:
                     raise AnsibleError("Unable to determine fanout SKU")
                 break

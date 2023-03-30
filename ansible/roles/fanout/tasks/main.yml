@@ -33,13 +33,13 @@
 - import_tasks: fanout_mlnx.yml
   when: os == 'mellanox'
 
-- block:
-  - set_fact:
-      leaf_name: "{{ inventory_hostname }}"
-      leaf: "{{ ansible_host }}"
+# - block:
+#   - set_fact:
+#       leaf_name: "{{ inventory_hostname }}"
+#       leaf: "{{ ansible_host }}"
 
-  - import_tasks: rootfanout_connect.yml
-    vars:
-      deploy_leaf: true
-  when: '"FanoutLeaf" in sw_type'
-  tags: always
+#   - import_tasks: rootfanout_connect.yml
+#     vars:
+#       deploy_leaf: true
+#   when: '"FanoutLeaf" in sw_type'
+#   tags: always

@@ -1,0 +1,23 @@
+!
+no spanning-tree
+!
+set mac-learning disable
+!
+mac-address-table reserved-forward 01:80:c2:00:00:02
+mac-address-table reserved-forward 01:80:c2:00:00:0e
+!
+vlan range {{ dev_vlans | list | join(',') }}
+!
+interface fx 0/2
+  switchport mode trunk
+  switchport trunk allowed vlan {{ dev_vlans | list | join(',') }}
+  no shutdown
+!
+interface cx 0/1
+  switchport mode trunk
+  switchport trunk allowed vlan {{ dev_vlans | list | join(',') }}
+  no shutdown
+!
+end
+copy running-config startup-config
+end

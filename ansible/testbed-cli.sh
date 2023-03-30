@@ -273,6 +273,9 @@ function add_topo
     ansible-playbook fanout_connect.yml -i $vmfile --limit "$server" --vault-password-file="${passwd}" -e "dut=$duts" $@
   fi
 
+  # Deploy Leaf-Fanout
+  ansible-playbook fanout.yml -i lab --limit str-7060dx4-leaf -b --vault-password-file password.txt
+  
   # Delete the obsoleted arp entry for the PTF IP
   ip neighbor flush $ptf_ip || true
 

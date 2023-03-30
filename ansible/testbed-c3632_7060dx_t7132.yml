@@ -1,0 +1,551 @@
+#####
+#
+# testbed-github.yaml is designed to be a convenient config file that contains information pertaining to sonic-mgmt
+# the information has been divided into the following groups: 
+#   - device_groups 
+#   - devices
+#   - host_vars
+#   - veos_groups
+#   - veos
+#   - testbed
+#   - topology
+#
+# these groups when converted from yaml in python become dictionaries. 
+# these dictionaries help generate files necessary for ansible to run test cases 
+#
+# where are files generated from: 
+#   - device_groups generates: lab
+#   - devices generates: fanout/secrets.yml, lab/secrets.yml, lab
+#   - host_vars generates: <host_vars>.yml
+#   - veos_groups generates: veos
+#   - veos generates: main.yml, vm_host/creds.yml, sonic_lab_devices.csv, eos/creds.yml, veos
+#   - testbed generates: testbed.csv
+#   - topology generates: sonic_lab_links.csv
+#
+# output files created:
+#   [1]  /group_vars/vm_host/main.yml
+#   [2]  /group_vars/vm_host/creds.yml
+#   [3]  /files/sonic_lab_devices.csv
+#   [4]  /testbed.csv
+#   [5]  /files/sonic_lab_links.csv
+#   [6]  /group_vars/eos/creds.yml
+#   [7]  /group_vars/fanout/secrets.yml
+#   [8]  /group_vars/lab/secrets.yml
+#   [9]  /lab
+#   [10] /veos
+#   [11*] /host_vars/<host_var>.yml (where * is 0 or more)
+#
+#####
+testbed_config:
+    name: testbed-github
+    alias: topologyGithubTestbed
+    type: Physical 
+
+# device_groups is a dictionary that contains the groups that devices and hosts belong to. it also contains global variables under 'vars'
+# device_groups is to export the lab file
+# cross references with devices for ansible_host value
+device_groups:                              
+    lab:
+        children: [sonic, fanout]                                # source: sonic-mgmt/ansible/lab 
+        vars:
+            mgmt_subnet_mask_length: "24"                        # source: sonic-mgmt/ansible/lab
+    sonic:
+        children: [sonic_inno_1]      # source: sonic-mgmt/ansible/lab
+    sonic_inno_1:
+        host: [lab-inno-01]                        # source: sonic-mgmt/ansible/lab
+        vars:
+            hwsku: "Supermicro_sse_t7132s"                               # source: sonic-mgmt/ansible/lab
+            iface_speed: "400000"                                 # source: sonic-mgmt/ansible/lab
+    fanout:
+        host: [str-c3632-root, str-7060dx4-leaf]         # source: sonic-mgmt/ansible/lab
+    ptf:
+        host: [ptf_vms1-1]                             # source: sonic-mgmt/ansible/lab
+
+# devices is a dictionary that contains all devices and hosts but not ptfs (ptfs found under testbed)
+# devices is used to export sonic_lab_devices, fanout/secrets, lab/secrets, lab
+# there are no cross references
+devices:
+    lab-inno-01:                         
+        device_type: DevSonic                       # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        hwsku: Supermicro_sse_t7132s                        # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        serial: SST32AR12B00001
+        base_mac: 7C:C2:55:2F:D5:6E
+        syseeprom_info:
+            "0x21": "SSE-T7132"
+            "0x22": "SSE-T7132SR"
+            "0x23": "SST32AR12B00001"
+            "0x24": "7C:C2:55:2F:D5:6E"
+            "0x28": "x86_64-supermicro_sse_t7132s-r0"
+            "0x29": "2022.05-r2"
+            "0x2A": 170
+            "0x2B": "Supermicro"
+            "0x2C": "TW"
+            "0x2D": "Supermicro"
+            "0x2E": "0.0.0.6"
+            "0xFE": "0xA5D66383"
+        alias: 
+        credentials:                    
+            username: 
+            password: 
+            enable_password:  
+        ansible:                             
+            ansible_host: 10.250.0.185/24           # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+            ansible_ssh_user: admin
+            ansible_ssh_pass: YourPaSsWoRd
+
+    str-7060dx4-leaf:                           
+        device_type: FanoutLeaf                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        hwsku: Arista-7060dx4-32                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        alias:             
+        credentials:                        
+            username:
+            password:
+        ansible:
+            ansible_host: 10.250.0.191/24            # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+            ansible_ssh_user: admin                  # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
+            ansible_ssh_pass: "123456"              # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
+            fanout_sonic_user: admin                # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
+            fanout_sonic_password: YourPaSsWoRd         # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
+            fanout_mlnx_user: admin
+            fanout_mlnx_password: admin
+            fanout_network_user: admin
+            fanout_network_password: "123456"
+            fanout_shell_user: root
+            fanout_shell_password: "123456"
+            os: eos
+
+    str-c3632-root:                            
+        device_type: FanoutRoot                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        hwsku: Seastone-DX010                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        alias: 
+        credentials:                        
+            username:                 
+            password:               
+        ansible:
+            ansible_host: 10.250.0.190/24           # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+            ansible_ssh_user: ADMIN                  # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
+            ansible_ssh_pass: ADMIN              # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
+            os: smis2
+
+    STR-ACS-SERV-01:                                # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        device_type: server                         # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        hwsku: TestServ                             # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        mgmt_subnet_mask_length: "24"               # source: sonic-mgmt/ansible/lab
+        alias:         
+        credentials:                        
+            username:                 
+            password:               
+        ansible:
+            ansible_host: 10.250.0.245/24           # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+            ansible_ssh_pass: password              # source: sonic-mgmt/ansible/group_vars/lab/
+            ansible_become_pass: password           # source: sonic-mgmt/ansible/group_vars/lab/secrets.yml
+            sonicadmin_user: admin                  # source: sonic-mgmt/ansible/group_vars/lab/secrets.yml
+            sonicadmin_password: YourPaSsWoRd           # source: sonic-mgmt/ansible/group_vars/lab/secrets.yml
+            sonicadmin_initial_password: YourPaSsWoRd   # source: sonic-mgmt/ansible/group_vars/lab/secrets.yml
+
+# host_vars is a dictionary that contains all host_var values
+# host_vars is used to export the host_vars files
+# there are no cross references
+host_vars:
+    STR-ACS-SERV-01:
+        mgmt_bridge: br1                # source: sonic-mgmt/host_vars
+        mgmt_prefixlen: 24              # source: sonic-mgmt/host_vars
+        mgmt_gw: 10.250.0.1             # source: sonic-mgmt/host_vars
+        external_port: enp134s0f0           # source: sonic-mgmt/host_vars
+        vm_mgmt_gw: 10.250.0.1
+
+# veos_groups is a dictionary that contains all veos groups
+# veos_groups is used to generate the veos file
+# veos_groups cross references veos (below)
+veos_groups:
+    servers:
+        children: [server_1]                      # source: sonic-mgmt/veos
+        vars: 
+            topologies: ['t1', 't1-lag', 't1-64-lag', 't1-64-lag-clet', 't0', 't0-56', 't0-52', 'ptf32', 'ptf64', 't0-64', 't0-64-32', 't0-116']  # source: sonic-mgmt/veos
+    server_1:
+        children: [vm_host_1, vms_1]                        # source: sonic-mgmt/veos
+        vars:
+            host_var_file: host_vars/STR-ACS-SERV-01.yml    # source: sonic-mgmt/veos
+    eos:
+        children: [vms_1]                            # source: sonic-mgmt/veos
+    vms_1:
+        host: [VM0100, VM0101, VM0102, VM0103, VM0104, VM0105, VM0106, VM0107, VM0108, VM0109, VM0110, VM0111, VM0112, VM0113, VM0114, VM0115, VM0116, VM0117, VM0118, VM0119, VM0120, VM0121, VM0122, VM0123, VM0124, VM0125, VM0126, VM0127, VM0128, VM0129, VM0130, VM0131]  # source: sonic-mgmt/veos
+    vm_host:
+        children: [vm_host_1]                    # source: sonic-mgmt/veos
+    vm_host_1:
+        host: [STR-ACS-SERV-01]                             # source: sonic-mgmt/veos
+
+# veos is a dictionary that contains veos information as well as hosts of children groups from veos_groups
+# veos is used to generate eos/creds, main.yml, vm_host/creds
+# veos_groups pulls information from this dictionary
+veos:                                               
+    credentials:                        
+        username:                 
+        password:       
+    root_path: veos-vm                                  # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    vm_images_url: https://acsbe.blob.core.windows.net/vmimages     # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    cd_image_filename: Aboot-veos-serial-8.0.0.iso                  # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    hdd_image_filename: vEOS-lab-4.20.15M.vmdk                      # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    skip_image_downloading: false                                   # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    vm_console_base: 7000                                           # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    memory: 2097152                                                 # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    max_fp_num: 4                                                   # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+    ptf_bp_ip: 10.10.246.254/24
+    ptf_bp_ipv6: fc0a::ff/64
+    supported_vm_types: [ "veos", "ceos", "vsonic" ]
+    sonic_image_filename: sonic-vs.img
+    proxy_env:                                                      # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+        http_proxy:                        # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml
+        https_proxy:                       # source: sonic-mgmt/ansible/group_vars/vm_host/main.yml                    
+    vm_host_ansible:
+        ansible_user: smci_user                                 # source: sonic-mgmt/ansible/group_vars/vm_host/creds.yml
+        ansible_password: smci1234                             # source: sonic-mgmt/ansible/group_vars/vm_host/creds.yml
+        ansible_become_password: smci1234                            # source: sonic-mgmt/ansible/group_vars/vm_host/creds.yml
+    eos_ansible:
+        ansible_user: admin                                 # source: sonic-mgmt/ansible/group_vars/eos/creds.yml
+        ansible_password: '123456'                             # source: sonic-mgmt/ansible/group_vars/eos/creds.yml
+    vms_1:
+        VM0100:                                                     # source: sonic-mgmt/ansible/veo:
+            ansible_host: 10.250.0.2
+        VM0101:
+            ansible_host: 10.250.0.3
+        VM0102:
+            ansible_host: 10.250.0.4
+        VM0103:
+            ansible_host: 10.250.0.5
+        VM0104:
+            ansible_host: 10.250.0.6
+        VM0105:
+            ansible_host: 10.250.0.7
+        VM0106:
+            ansible_host: 10.250.0.8
+        VM0107:
+            ansible_host: 10.250.0.9
+        VM0108:
+            ansible_host: 10.250.0.10
+        VM0109:
+            ansible_host: 10.250.0.11
+        VM0110:
+            ansible_host: 10.250.0.12
+        VM0111:
+            ansible_host: 10.250.0.13
+        VM0112:
+            ansible_host: 10.250.0.14
+        VM0113:
+            ansible_host: 10.250.0.15
+        VM0114:
+            ansible_host: 10.250.0.16
+        VM0115:
+            ansible_host: 10.250.0.17
+        VM0116:
+            ansible_host: 10.250.0.18
+        VM0117:
+            ansible_host: 10.250.0.19
+        VM0118:
+            ansible_host: 10.250.0.20
+        VM0119:
+            ansible_host: 10.250.0.21
+        VM0120:
+            ansible_host: 10.250.0.22
+        VM0121:
+            ansible_host: 10.250.0.23
+        VM0122:
+            ansible_host: 10.250.0.24
+        VM0123:
+            ansible_host: 10.250.0.25
+        VM0124:
+            ansible_host: 10.250.0.26
+        VM0125:
+            ansible_host: 10.250.0.27
+        VM0126:
+            ansible_host: 10.250.0.28
+        VM0127:
+            ansible_host: 10.250.0.29
+        VM0128:
+            ansible_host: 10.250.0.30
+        VM0129:
+            ansible_host: 10.250.0.31
+        VM0130:
+            ansible_host: 10.250.0.32
+        VM0131:
+            ansible_host: 10.250.0.33
+
+# testbed dictionary contains information about the testbed
+# testbed is used to generate testbed.csv
+# testbed dictionary does not cross reference with other files 
+testbed:
+    ptf3-i:                                                 # source: sonic-mgmt/ansible/testbed.csv
+        group-name: ptf3                                    # source: sonic-mgmt/ansible/testbed.csv
+        topo: ptf32                                         # source: sonic-mgmt/ansible/testbed.csv
+        ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
+        ptf: ptf_vms1-1
+        ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
+        vm_base:  
+        dut: lab-inno-01                                   # source: sonic-mgmt/ansible/testbed.csv
+        comment: Test ptf Innovium                          # source: sonic-mgmt/ansible/testbed.csv
+        ansible_ssh_user: root
+        ansible_ssh_pass: root
+
+    vms-t7132s-t0:                                          # source: sonic-mgmt/ansible/testbed.csv
+        group-name: vms1-1                                  # source: sonic-mgmt/ansible/testbed.csv 
+        topo: t0                                            # source: sonic-mgmt/ansible/testbed.csv
+        ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
+        ptf: ptf_vms1-1
+        ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
+        vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
+        dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
+        comment: Tests Innovium vms                  # source: sonic-mgmt/ansible/testbed.csv
+        ansible_ssh_user: root
+        ansible_ssh_pass: root
+
+    vms-t7132s-t1:                                          # source: sonic-mgmt/ansible/testbed.csv
+        group-name: vms1-1                                  # source: sonic-mgmt/ansible/testbed.csv 
+        topo: t1                                            # source: sonic-mgmt/ansible/testbed.csv
+        ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
+        ptf: ptf_vms1-1
+        ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
+        vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
+        dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
+        comment: Tests Innovium vms                  # source: sonic-mgmt/ansible/testbed.csv
+        ansible_ssh_user: root
+        ansible_ssh_pass: root
+
+    vms-t7132s-t1-lag:                                          # source: sonic-mgmt/ansible/testbed.csv
+        group-name: vms1-1                                  # source: sonic-mgmt/ansible/testbed.csv 
+        topo: t1-lag                                            # source: sonic-mgmt/ansible/testbed.csv
+        ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
+        ptf: ptf_vms1-1
+        ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
+        vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
+        dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
+        comment: Tests Innovium vms                  # source: sonic-mgmt/ansible/testbed.csv
+        ansible_ssh_user: root
+        ansible_ssh_pass: root
+
+# topology dictionary contains information about the topology (which device ports connect to each other)
+# topology is used to generate sonic_lab_links
+# topology dictionary does not cross reference with other files 
+topology:                               # source: sonic-mgmt/ansible/files/sonic_lab_links.csv
+    lab-inno-01:                     # source: sonic-mgmt/ansible/files/sonic_lab_links.csv
+        interfaces:                     # DUT/ start device
+            Ethernet0:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet1/1
+                Bandwidth: 400000
+                VlanID: 1601
+                VlanMode: Access
+            Ethernet8:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet2/1
+                Bandwidth: 400000
+                VlanID: 1602
+                VlanMode: Access
+            Ethernet16:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet3/1
+                Bandwidth: 400000
+                VlanID: 1603
+                VlanMode: Access
+            Ethernet24:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet4/1
+                Bandwidth: 400000
+                VlanID: 1604
+                VlanMode: Access
+            Ethernet32:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet5/1
+                Bandwidth: 400000
+                VlanID: 1605
+                VlanMode: Access
+            Ethernet40:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet6/1
+                Bandwidth: 400000
+                VlanID: 1606
+                VlanMode: Access
+            Ethernet48:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet7/1
+                Bandwidth: 400000
+                VlanID: 1607
+                VlanMode: Access
+            Ethernet56:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet8/1
+                Bandwidth: 400000
+                VlanID: 1608
+                VlanMode: Access
+            Ethernet64:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet9/1
+                Bandwidth: 400000
+                VlanID: 1609
+                VlanMode: Access
+            Ethernet72:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet10/1
+                Bandwidth: 400000
+                VlanID: 1610
+                VlanMode: Access
+            Ethernet80:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet11/1
+                Bandwidth: 400000
+                VlanID: 1611
+                VlanMode: Access
+            Ethernet88:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet12/1
+                Bandwidth: 400000
+                VlanID: 1612
+                VlanMode: Access
+            Ethernet96:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet13/1
+                Bandwidth: 400000
+                VlanID: 1613
+                VlanMode: Access
+            Ethernet104:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet14/1
+                Bandwidth: 400000
+                VlanID: 1614
+                VlanMode: Access
+            Ethernet112:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet15/1
+                Bandwidth: 400000
+                VlanID: 1615
+                VlanMode: Access
+            Ethernet120:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet16/1
+                Bandwidth: 400000
+                VlanID: 1616
+                VlanMode: Access
+            Ethernet128:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet17/1
+                Bandwidth: 400000
+                VlanID: 1617
+                VlanMode: Access
+            Ethernet136:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet18/1
+                Bandwidth: 400000
+                VlanID: 1618
+                VlanMode: Access
+            Ethernet144:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet19/1
+                Bandwidth: 400000
+                VlanID: 1619
+                VlanMode: Access
+            Ethernet152:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet20/1
+                Bandwidth: 400000
+                VlanID: 1620
+                VlanMode: Access
+            Ethernet160:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet21/1
+                Bandwidth: 400000
+                VlanID: 1621
+                VlanMode: Access
+            Ethernet168:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet22/1
+                Bandwidth: 400000
+                VlanID: 1622
+                VlanMode: Access
+            Ethernet176:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet23/1
+                Bandwidth: 400000
+                VlanID: 1623
+                VlanMode: Access
+            Ethernet184:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet24/1
+                Bandwidth: 400000
+                VlanID: 1624
+                VlanMode: Access
+            Ethernet192:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet25/1
+                Bandwidth: 400000
+                VlanID: 1625
+                VlanMode: Access
+            Ethernet200:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet26/1
+                Bandwidth: 400000
+                VlanID: 1626
+                VlanMode: Access
+            Ethernet208:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet27/1
+                Bandwidth: 400000
+                VlanID: 1627
+                VlanMode: Access
+            Ethernet216:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet28/1
+                Bandwidth: 400000
+                VlanID: 1628
+                VlanMode: Access
+            Ethernet224:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet29/1
+                Bandwidth: 400000
+                VlanID: 1629
+                VlanMode: Access
+            Ethernet232:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet30/1
+                Bandwidth: 400000
+                VlanID: 1630
+                VlanMode: Access
+            Ethernet240:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet31/1
+                Bandwidth: 400000
+                VlanID: 1631
+                VlanMode: Access
+            Ethernet248:
+                EndDevice: str-7060dx4-leaf
+                EndPort: Ethernet32/1
+                Bandwidth: 400000
+                VlanID: 1632
+                VlanMode: Access
+
+    str-7060dx4-leaf:                        # source: sonic-mgmt/ansible/files/sonic_lab_links.csv
+        interfaces:                     # DUT/ start device
+            Ethernet33:
+                EndDevice: str-c3632-root
+                EndPort: Fx0/2
+                Bandwidth: 10000
+                VlanID: 1601-1632
+                VlanMode: Trunk
+
+    str-c3632-root:                        # source: sonic-mgmt/ansible/files/sonic_lab_links.csv
+        interfaces:                     # DUT/ start device
+            Cx0/1:
+                EndDevice: STR-ACS-SERV-01
+                EndPort: enp134s0f0
+                Bandwidth: 10000
+                VlanID: 1601-1632
+                VlanMode: Trunk
+
+# docker_registry is optional. It is not necessary unless you want to change the default location of the docker-registry.
+# docker_registry dictionary contains information about the host, username, and password
+# docker_registry is used to generate docker_registry.yaml
+# docker_registry dictionary does not cross reference with other files 
+docker_registry:
+   docker_registry_host: 127.0.0.1:5000

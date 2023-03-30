@@ -1,0 +1,41 @@
+!
+no spanning-tree
+!
+set mac-learning disable
+!
+# VLAN
+!
+vlan range {{ device_vlan_range[inventory_hostname] | list | join(',') }}
+!
+# INTERFACE
+{% for intfx, value in device_port_vlans[inventory_hostname].items() %}
+interface {{ intfx[0:2] + ' ' + intfx[2:] }}
+{% if intfx in device_port_vlans[inventory_hostname] and device_port_vlans[inventory_hostname][intfx]['mode'] != "Trunk" %}
+{%     if device_conn[inventory_hostname][intfx]['speed'] == "1000" %}
+   description {{ device_conn[inventory_hostname][intfx]['peerdevice'] }}-{{ device_conn[inventory_hostname][intfx]['peerport'] }}
+   switchport mode access
+   switchport pvid {{ device_port_vlans[inventory_hostname][intfx]['vlanids'] }}
+   switchport acceptable-frame-type untaggedAndPriorityTagged
+   no shutdown
+{%     else %}
+{#        Not valid speed value #}
+   shutdown
+{%     endif %}
+{% elif intfx in device_port_vlans[inventory_hostname] and device_port_vlans[inventory_hostname][intfx]['mode'] == 'Trunk' %}
+   {# switchport trunk allowed vlan 1681-1728 #}
+   description {{ device_conn[inventory_hostname][intfx]['peerdevice'] }}-{{ device_conn[inventory_hostname][intfx]['peerport'] }}
+   switchport mode trunk
+   switchport trunk allowed vlan {{ device_port_vlans[inventory_hostname][intfx]['vlanids'] }}
+   no shutdown
+{% else %}
+   shutdown
+{% endif %}
+!
+{% endfor %}
+!
+interface mgmt
+ ip address  10.250.0.180 255.255.255.0
+!
+end
+copy running-config startup-config
+end
