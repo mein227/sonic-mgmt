@@ -2,7 +2,7 @@
 vms_1
 
 [vm_host_1]
-STR-ACS-SERV-01
+STR-ACS-SERV-01 ansible_host=10.250.0.245
 
 [servers:children]
 server_1

@@ -7,9 +7,6 @@ ptf_bp_ip: 10.10.246.254/24
 ptf_bp_ipv6: fc0a::ff/64
 root_path: veos-vm
 skip_image_downloading: false
+sonic_image_filename: sonic-vs.img
 vm_console_base: 7000
 vm_images_url: https://acsbe.blob.core.windows.net/vmimages
-# proxy
-proxy_env:
-  http_proxy:
-  https_proxy:

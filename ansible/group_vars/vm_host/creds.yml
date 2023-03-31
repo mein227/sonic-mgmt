@@ -1,7 +1,7 @@
 ---
-ansible_become_pass:
+ansible_become_password: smci1234
 ansible_password: smci1234
 ansible_user: smci_user
-vm_host_become_password:
+vm_host_become_password: smci1234
 vm_host_password: smci1234
 vm_host_user: smci_user
