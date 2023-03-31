@@ -125,19 +125,26 @@ def makeMain(data, outfile):
         "memory": veos.get("memory"),
         "max_fp_num": veos.get("max_fp_num"),
         "ptf_bp_ip": veos.get("ptf_bp_ip"),
-        "ptf_bp_ipv6": veos.get("ptf_bp_ipv6")
+        "ptf_bp_ipv6": veos.get("ptf_bp_ipv6"),
+        "sonic_image_filename": veos.get("sonic_image_filename")
     }
-    proxy = {
-        "proxy_env": {
-            "http_proxy": veos.get("proxy_env").get("http_proxy"),
-            "https_proxy": veos.get("proxy_env").get("https_proxy")
+    http_proxy = veos.get("proxy_env").get("http_proxy")
+    https_proxy = veos.get("proxy_env").get("https_proxy")
+    if (http_proxy or https_proxy):
+        proxy = {
+            "proxy_env": {
+                "http_proxy": veos.get("proxy_env").get("http_proxy"),
+                "https_proxy": veos.get("proxy_env").get("https_proxy")
+            }
         }
-    }
+    else:
+        proxy = None
     with open(outfile, "w") as toWrite:
         toWrite.write( "supported_vm_types: [ 'veos', 'ceos', 'vsonic' ]\n" ),
         yaml.dump(dictData, stream=toWrite, default_flow_style=False)
-        toWrite.write("# proxy\n")
-        yaml.dump(proxy, stream=toWrite, default_flow_style=False)
+        if (proxy):
+            toWrite.write("# proxy\n")
+            yaml.dump(proxy, stream=toWrite, default_flow_style=False)
 
 
 """
@@ -145,17 +152,17 @@ makeVMHost_cred(data, outfile)
 @:parameter data - the dictionary to look for (in this case: veos)
 @:parameter outfile - the file to write to
 generates /group_vars/vm_host/creds.yml
-pulls ansible_user, ansible_password, ansible_become_pass from vm_host_ansible into a dictionary
+pulls ansible_user, ansible_password, ansible_become_password from vm_host_ansible into a dictionary
 """
 def makeVMHostCreds(data, outfile):
     veos = data
     result = {
         "ansible_user": veos.get("vm_host_ansible").get("ansible_user"),
         "ansible_password": veos.get("vm_host_ansible").get("ansible_password"),
-        "ansible_become_pass": veos.get("vm_host_ansible").get("ansible_become_pass"),
+        "ansible_become_password": veos.get("vm_host_ansible").get("ansible_become_password"),
         "vm_host_user": veos.get("vm_host_ansible").get("ansible_user"),
         "vm_host_password": veos.get("vm_host_ansible").get("ansible_password"),
-        "vm_host_become_password": veos.get("vm_host_ansible").get("ansible_become_pass")
+        "vm_host_become_password": veos.get("vm_host_ansible").get("ansible_become_password")
     }
     with open(outfile, "w") as toWrite:
         toWrite.write("---\n")
@@ -192,8 +199,16 @@ def makeSonicLabDevices(data, outfile):
                 if not cardType:
                     cardType = ""
 
-                row = hostname + "," + managementIP + "," + hwsku + "," + devType + "," + cardType
-                f.write(row + "\n")
+                # convert to list
+                if isinstance(devType, list):
+                    devTypeList = devType
+                else:
+                    # assume it is str
+                    devTypeList = [devType]
+
+                for devType_run in devTypeList:
+                    row = hostname + "," + managementIP + "," + hwsku + "," + devType_run + "," + cardType
+                    f.write(row + "\n")
     except IOError:
         print("I/O error: makeSonicLabDevices")
 
@@ -337,9 +352,18 @@ def makeFanoutSecrets(data, outfile):
     result = dict()
 
     for key, value in devices.items():
-        if "fanout" in value.get("device_type").lower():
-            result.update({"ansible_ssh_user": value.get("ansible").get("ansible_ssh_user")})
-            result.update({"ansible_ssh_pass": value.get("ansible").get("ansible_ssh_pass")})
+        device_type = value.get("device_type");
+        if (isinstance(device_type, str) and "fanout" in device_type.lower()) or \
+           (isinstance(device_type, list) and [t for t in device_type if "fanout" in t.lower()]):
+            ansible_keys = ["ansible_ssh_user", "ansible_ssh_pass",
+                            "fanout_sonic_user", "fanout_sonic_password",
+                            "fanout_network_user", "fanout_network_password",
+                            "fanout_shell_user", "fanout_shell_password",
+                            "fanout_mlnx_user", "fanout_mlnx_password"]
+            for ansible_key in ansible_keys:
+                ansible_value = value.get("ansible").get(ansible_key)
+                if ansible_value:
+                    result.update({ansible_key: ansible_value})
 
     with open(outfile, "w") as toWrite:
         yaml.dump(result, stream=toWrite, default_flow_style=False)
@@ -358,7 +382,9 @@ def makeLabSecrets(data, outfile):
     result = dict()
 
     for key, value in devices.items():
-        if "server" in value.get("device_type").lower():
+        device_type = value.get("device_type");
+        if (isinstance(device_type, str) and "server" in device_type.lower()) or \
+           (isinstance(device_type, list) and [t for t in device_type if "server" in t.lower()]):
             result.update({"ansible_ssh_pass": value.get("ansible").get("ansible_ssh_pass")})
             result.update({"ansible_become_pass": value.get("ansible").get("ansible_become_pass")})
             result.update({"sonicadmin_user": value.get("ansible").get("sonicadmin_user")})
