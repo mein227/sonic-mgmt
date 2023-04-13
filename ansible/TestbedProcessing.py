@@ -3,6 +3,7 @@ import yaml
 import datetime
 import os
 import argparse
+import subprocess
 
 """"
 Testbed Processing
@@ -940,6 +941,14 @@ def main():
     updateDockerRegistry(docker_registry, args.basedir + dockerRegistry_file)
     print("PROCESS COMPLETED")
 
+    ##############################################################
+    # call creategraph.py
+    print("GENERATING files/lab_connection_graph.xml")
+    output = subprocess.check_output("cd files; ./creategraph.py -d sonic_lab_devices.csv -l sonic_lab_links.csv -o lab_connection_graph.xml", shell=True)
+    if not output:
+        print("DONE")
+    else:
+        print(output)
 
 if __name__ == '__main__':
     main()

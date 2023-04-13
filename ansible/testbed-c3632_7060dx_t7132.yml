@@ -68,21 +68,21 @@ devices:
     lab-inno-01:                         
         device_type: DevSonic                       # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
         hwsku: Supermicro_sse_t7132s                        # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
-        serial: SST32AR12B00001
-        base_mac: 7C:C2:55:2F:D5:6E
+        serial: SST32AN13200019
+        base_mac: 7C:C2:55:55:40:A0
         syseeprom_info:
             "0x21": "SSE-T7132"
-            "0x22": "SSE-T7132SR"
-            "0x23": "SST32AR12B00001"
-            "0x24": "7C:C2:55:2F:D5:6E"
+            "0x22": "SSE-T7132S"
+            "0x23": "SST32AN13200019"
+            "0x24": "7C:C2:55:55:40:A0"
             "0x28": "x86_64-supermicro_sse_t7132s-r0"
             "0x29": "2022.05-r2"
             "0x2A": 170
             "0x2B": "Supermicro"
             "0x2C": "TW"
             "0x2D": "Supermicro"
-            "0x2E": "0.0.0.6"
-            "0xFE": "0xA5D66383"
+            "0x2E": "0.0.5.0"
+            "0xFE": "0xA026E70D"
         alias: 
         credentials:                    
             username: 
@@ -112,7 +112,7 @@ devices:
             fanout_network_password: "123456"
             fanout_shell_user: root
             fanout_shell_password: "123456"
-            os: eos
+        os: eos
 
     str-c3632-root:                            
         device_type: FanoutRoot                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
@@ -125,7 +125,7 @@ devices:
             ansible_host: 10.250.0.190/24           # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
             ansible_ssh_user: ADMIN                  # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
             ansible_ssh_pass: ADMIN              # source: sonic-mgmt/ansible/group_vars/fanout/secrets.yml
-            os: smis2
+        os: smis2
 
     STR-ACS-SERV-01:                                # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
         device_type: server                         # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
@@ -280,6 +280,7 @@ testbed:
         ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
         ptf: ptf_vms1-1
         ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        ptf_ipv6: fec0::178/64
         server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
         vm_base:  
         dut: lab-inno-01                                   # source: sonic-mgmt/ansible/testbed.csv
@@ -293,6 +294,7 @@ testbed:
         ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
         ptf: ptf_vms1-1
         ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        ptf_ipv6: fec0::178/64
         server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
         vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
         dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
@@ -306,6 +308,7 @@ testbed:
         ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
         ptf: ptf_vms1-1
         ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        ptf_ipv6: fec0::178/64
         server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
         vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
         dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
@@ -319,6 +322,7 @@ testbed:
         ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
         ptf: ptf_vms1-1
         ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        ptf_ipv6: fec0::178/64
         server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
         vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
         dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
