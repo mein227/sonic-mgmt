@@ -366,7 +366,7 @@ class EosHost(AnsibleHostBase):
                     'show interface {} hardware'.format(interface_name)]
         for command in commands:
             output = self.eos_command(commands=[command])
-            found_txt = re.search("Speed/Duplex: (.+)", output['stdout'][0])
+            found_txt = re.search("Speed/duplex: (.+)", output['stdout'][0])
             if found_txt is not None:
                 break
 
