@@ -71,6 +71,8 @@ def get_cable_supported_speeds_helper(duthost):
         return MlnxCableSupportedSpeedsHelper
     elif asic_type == "barefoot":
         return BfnCableSupportedSpeedsHelper
+    elif asic_type == "innovium":
+        return InnoCableSupportedSpeedsHelper
     else:
         return None
 
@@ -123,6 +125,14 @@ class MlnxCableSupportedSpeedsHelper(object):
 
 
 class BfnCableSupportedSpeedsHelper(object):
+
+    @classmethod
+    def get_cable_supported_speeds(cls, duthost, dut_port_name):
+
+        return duthost.get_supported_speeds(dut_port_name)
+
+
+class InnoCableSupportedSpeedsHelper(object):
 
     @classmethod
     def get_cable_supported_speeds(cls, duthost, dut_port_name):
