@@ -1,5 +1,5 @@
 # conf-name,group-name,topo,ptf_image_name,ptf,ptf_ip,ptf_ipv6,server,vm_base,dut,comment
-ptf3-i,ptf3,ptf32,docker-ptf,ptf_vms1-1,10.250.0.178/24,,server_1,,lab-inno-01,Test ptf Innovium
-vms-t7132s-t1-lag,vms1-1,t1-lag,docker-ptf,ptf_vms1-1,10.250.0.178/24,,server_1,VM0100,lab-inno-01,Tests Innovium vms
-vms-t7132s-t1,vms1-1,t1,docker-ptf,ptf_vms1-1,10.250.0.178/24,,server_1,VM0100,lab-inno-01,Tests Innovium vms
-vms-t7132s-t0,vms1-1,t0,docker-ptf,ptf_vms1-1,10.250.0.178/24,,server_1,VM0100,lab-inno-01,Tests Innovium vms
+ptf3-i,ptf3,ptf32,docker-ptf,ptf_vms1-1,10.250.0.178/24,fec0::178/64,server_1,,lab-inno-01,Test ptf Innovium
+vms-t7132s-t1-lag,vms1-1,t1-lag,docker-ptf,ptf_vms1-1,10.250.0.178/24,fec0::178/64,server_1,VM0100,lab-inno-01,Tests Innovium vms
+vms-t7132s-t1,vms1-1,t1,docker-ptf,ptf_vms1-1,10.250.0.178/24,fec0::178/64,server_1,VM0100,lab-inno-01,Tests Innovium vms
+vms-t7132s-t0,vms1-1,t0,docker-ptf,ptf_vms1-1,10.250.0.178/24,fec0::178/64,server_1,VM0100,lab-inno-01,Tests Innovium vms

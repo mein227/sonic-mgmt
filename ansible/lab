@@ -2,11 +2,11 @@
 sonic_inno_1
 
 [fanout]
-str-c3632-root	ansible_host=10.250.0.190	ansible_ssh_user=ADMIN	ansible_ssh_pass=ADMIN	hwsku=Seastone-DX010	start_switchid=0
-str-7060dx4-leaf	ansible_host=10.250.0.191	ansible_ssh_user=admin	ansible_ssh_pass=123456	hwsku=Arista-7060dx4-32	start_switchid=1
+str-c3632-root	ansible_host=10.250.0.190	ansible_ssh_user=ADMIN	ansible_ssh_pass=ADMIN	hwsku=Seastone-DX010	start_switchid=0	os=smis2
+str-7060dx4-leaf	ansible_host=10.250.0.191	ansible_ssh_user=admin	ansible_ssh_pass=123456	hwsku=Arista-7060dx4-32	start_switchid=1	os=eos
 
 [ptf]
-ptf_vms1-1
+ptf_vms1-1 ansible_host=10.250.0.178   ansible_ssh_user=root   ansible_ssh_pass=root
 
 [lab:children]
 sonic
@@ -16,7 +16,7 @@ fanout
 mgmt_subnet_mask_length=24
 
 [sonic_inno_1]
-lab-inno-01	ansible_host=10.250.0.185	ansible_ssh_user=admin	ansible_ssh_pass=YourPaSsWoRd	hwsku=Supermicro_sse_t7132s	start_switchid=2	base_mac=7C:C2:55:2F:D5:6E	serial=SST32AR12B00001
+lab-inno-01	ansible_host=10.250.0.185	ansible_ssh_user=admin	ansible_ssh_pass=YourPaSsWoRd	hwsku=Supermicro_sse_t7132s	start_switchid=2	base_mac=7C:C2:55:55:40:A0	serial=SST32AN13200019
 
 [sonic_inno_1:vars]
 hwsku=Supermicro_sse_t7132s
