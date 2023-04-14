@@ -8,6 +8,7 @@ import pytest
 import random
 import re
 import socket
+import six
 
 from jinja2 import Template
 from tests.common.helpers.assertions import pytest_assert as pt_assert
@@ -361,7 +362,7 @@ def setup_interfaces(duthosts, enum_rand_one_per_hwsku_frontend_hostname, ptfhos
 
             subnet_prefixlen = list(used_subnets)[0].prefixlen
             # Use a subnet which doesnt conflict with other subnets used in minigraph
-            subnets = ipaddress.ip_network("20.0.0.0/24").subnets(new_prefix=subnet_prefixlen)
+            subnets = ipaddress.ip_network(six.u("20.0.0.0/24")).subnets(new_prefix=subnet_prefixlen)
 
             loopback_ip = None
             for intf in mg_facts["minigraph_lo_interfaces"]:
