@@ -186,7 +186,7 @@ def constants(is_quagga, setup_interfaces):
         _constants.update_interval_threshold = 20
     else:
         _constants.sleep_interval = 5
-        _constants.update_interval_threshold = 1
+        _constants.update_interval_threshold = 3
 
     conn0 = setup_interfaces[0]
     _constants.routes = []

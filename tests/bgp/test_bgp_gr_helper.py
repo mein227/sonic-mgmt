@@ -3,6 +3,7 @@ import logging
 import ipaddress
 import random
 import json
+import six
 
 from tests.common.helpers.assertions import pytest_assert
 from tests.common.utilities import wait_until
@@ -113,8 +114,8 @@ def test_bgp_gr_helper_routes_perserved(duthosts, rand_one_dut_hostname, nbrhost
     # select neighbor to test
     if duthost.check_bgp_default_route():
         # if default route is present, select from default route nexthops
-        rtinfo_v4 = duthost.get_ip_route_info(ipaddress.ip_network("0.0.0.0/0"))
-        rtinfo_v6 = duthost.get_ip_route_info(ipaddress.ip_network("::/0"))
+        rtinfo_v4 = duthost.get_ip_route_info(ipaddress.ip_network(six.u("0.0.0.0/0")))
+        rtinfo_v6 = duthost.get_ip_route_info(ipaddress.ip_network(six.u("::/0")))
 
         ifnames_v4 = [nh[1] for nh in rtinfo_v4['nexthops']]
         ifnames_v6 = [nh[1] for nh in rtinfo_v6['nexthops']]

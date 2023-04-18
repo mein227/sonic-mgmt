@@ -247,7 +247,7 @@ def setup_interfaces(duthosts, enum_rand_one_per_hwsku_frontend_hostname, ptfhos
             ptfhost.remove_ip_addresses()
 
             for conn in connections:
-                ptfhost.shell("ifconfig %s %s" % (conn["neighbor_intf"],
+                ptfhost.shell("ifconfig %s %s mtu 1500" % (conn["neighbor_intf"],
                                                   conn["neighbor_addr"]))
                 # NOTE: this enables the standby ToR to passively learn
                 # all the neighbors configured on the ptf interfaces
@@ -258,7 +258,7 @@ def setup_interfaces(duthosts, enum_rand_one_per_hwsku_frontend_hostname, ptfhos
         finally:
             ptfhost.shell("ip route delete %s" % loopback_intf_addr)
             for conn in connections:
-                ptfhost.shell("ifconfig %s 0.0.0.0" % conn["neighbor_intf"])
+                ptfhost.shell("ifconfig %s 0.0.0.0 mtu 9216" % conn["neighbor_intf"])
 
     @contextlib.contextmanager
     def _setup_interfaces_t0_or_mx(mg_facts, peer_count):
@@ -300,14 +300,14 @@ def setup_interfaces(duthosts, enum_rand_one_per_hwsku_frontend_hostname, ptfhos
             ptfhost.remove_ip_addresses()  # In case other case did not cleanup IP address configured on PTF interface
 
             for conn in connections:
-                ptfhost.shell("ifconfig %s %s" % (conn["neighbor_intf"],
+                ptfhost.shell("ifconfig %s %s mtu 1500" % (conn["neighbor_intf"],
                                                   conn["neighbor_addr"]))
 
             yield connections
 
         finally:
             for conn in connections:
-                ptfhost.shell("ifconfig %s 0.0.0.0" % conn["neighbor_intf"])
+                ptfhost.shell("ifconfig %s 0.0.0.0 mtu 9216" % conn["neighbor_intf"])
 
     @contextlib.contextmanager
     def _setup_interfaces_t1_or_t2(mg_facts, peer_count):
@@ -417,7 +417,7 @@ def setup_interfaces(duthosts, enum_rand_one_per_hwsku_frontend_hostname, ptfhos
                 # bind the ip to the interface and notify bgpcfgd
                 asichost.config_ip_intf(conn["local_intf"], conn["local_addr"], "add")
 
-                ptfhost.shell("ifconfig %s %s" % (conn["neighbor_intf"], conn["neighbor_addr"]))
+                ptfhost.shell("ifconfig %s %s mtu 1500" % (conn["neighbor_intf"], conn["neighbor_addr"]))
 
                 # add route to loopback address on PTF host
                 nhop_ip = re.split("/", conn["local_addr"])[0]
@@ -439,7 +439,7 @@ def setup_interfaces(duthosts, enum_rand_one_per_hwsku_frontend_hostname, ptfhos
             for conn in connections:
                 asichost = duthost.asic_instance_from_namespace(conn['namespace'])
                 asichost.config_ip_intf(conn["local_intf"], conn["local_addr"], "remove")
-                ptfhost.shell("ifconfig %s 0.0.0.0" % conn["neighbor_intf"])
+                ptfhost.shell("ifconfig %s 0.0.0.0 mtu 9216" % conn["neighbor_intf"])
                 ptfhost.shell(
                     "ip route del {}/32".format(conn["loopback_ip"]),
                     module_ignore_errors=True
