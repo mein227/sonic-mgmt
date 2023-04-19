@@ -1,7 +1,7 @@
 <LabConnectionGraph>
   <PhysicalNetworkGraphDeclaration>
     <Devices>
-      <Device CardType="" Hostname="str-7060dx4-leaf" HwSku="Arista-7060dx4-32" Type="FanoutLeaf"/>
+      <Device CardType="" Hostname="str-7060dx4-leaf" HwSku="Arista-7060DX4-32" Type="FanoutLeaf"/>
       <Device CardType="" Hostname="lab-inno-01" HwSku="Supermicro_sse_t7132s" Type="DevSonic"/>
       <Device CardType="" Hostname="str-c3632-root" HwSku="Seastone-DX010" Type="FanoutRoot"/>
       <Device CardType="" Hostname="STR-ACS-SERV-01" HwSku="TestServ" Type="server"/>

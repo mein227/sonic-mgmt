@@ -95,7 +95,7 @@ devices:
 
     str-7060dx4-leaf:                           
         device_type: FanoutLeaf                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
-        hwsku: Arista-7060dx4-32                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
+        hwsku: Arista-7060DX4-32                     # source: sonic-mgmt/ansible/files/sonic_lab_devices-github.csv
         alias:             
         credentials:                        
             username:

@@ -3,7 +3,7 @@ sonic_inno_1
 
 [fanout]
 str-c3632-root	ansible_host=10.250.0.190	ansible_ssh_user=ADMIN	ansible_ssh_pass=ADMIN	hwsku=Seastone-DX010	start_switchid=0	os=smis2
-str-7060dx4-leaf	ansible_host=10.250.0.191	ansible_ssh_user=admin	ansible_ssh_pass=123456	hwsku=Arista-7060dx4-32	start_switchid=1	os=eos
+str-7060dx4-leaf	ansible_host=10.250.0.191	ansible_ssh_user=admin	ansible_ssh_pass=123456	hwsku=Arista-7060DX4-32	start_switchid=1	os=eos
 
 [ptf]
 ptf_vms1-1 ansible_host=10.250.0.178   ansible_ssh_user=root   ansible_ssh_pass=root

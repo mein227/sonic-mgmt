@@ -1,5 +1,5 @@
 Hostname,ManagementIp,HwSku,Type,CardType
-str-7060dx4-leaf,10.250.0.191/24,Arista-7060dx4-32,FanoutLeaf,
+str-7060dx4-leaf,10.250.0.191/24,Arista-7060DX4-32,FanoutLeaf,
 lab-inno-01,10.250.0.185/24,Supermicro_sse_t7132s,DevSonic,
 str-c3632-root,10.250.0.190/24,Seastone-DX010,FanoutRoot,
 STR-ACS-SERV-01,10.250.0.245/24,TestServ,server,

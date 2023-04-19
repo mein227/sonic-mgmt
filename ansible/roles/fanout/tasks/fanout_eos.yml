@@ -40,7 +40,7 @@
 - name: build fanout startup config for 7060dx4
   template: src=arista_7060_deploy.j2
             dest=/mnt/flash/startup-config
-  when: device_info[inventory_hostname]["HwSku"] == "Arista-7060dx4-32"
+  when: device_info[inventory_hostname]["HwSku"] == "Arista-7060DX4-32"
   become: yes
 
 - name: build fanout startup config for Seastone_2
