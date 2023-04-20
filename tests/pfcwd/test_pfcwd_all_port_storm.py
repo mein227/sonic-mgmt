@@ -63,6 +63,9 @@ def storm_test_setup_restore(setup_pfc_test, enum_fanout_graph_facts, duthosts, 
 
     logger.info("--- Storm test cleanup ---")
     storm_hndle.stop_pfc_storm()
+    
+    logger.info("--- Stop Pfcwd --")
+    duthost.command("pfcwd stop")
 
 def populate_peer_info(port_list, neighbors, q_idx, frames_cnt):
     """

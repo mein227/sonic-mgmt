@@ -170,5 +170,5 @@ def setup_pfc_test(
     duthost.command("pfcwd stop")
 
     # set poll interval
-    duthost.command("pfcwd interval {}".format(setup_info['pfc_timers']['pfc_wd_poll_time']))
+    # duthost.command("pfcwd interval {}".format(setup_info['pfc_timers']['pfc_wd_poll_time']))
     yield setup_info
