@@ -4,6 +4,7 @@ import sys
 
 from tests.common import constants
 import sys
+import six
 
 # If the version of the Python interpreter is greater or equal to 3, set the unicode variable to the str class.
 if sys.version_info[0] >= 3:
@@ -64,7 +65,7 @@ class TrafficPorts(object):
         pfc_wd_test_port = None
         first_pair = False
         for intf in self.mg_facts['minigraph_interfaces']:
-            if ipaddress.ip_address(str(intf['addr'])).version != 4:
+            if ipaddress.ip_address(six.text_type(intf['addr'])).version != 4:
                 continue
             # first port
             if not self.pfc_wd_rx_port:
@@ -83,7 +84,7 @@ class TrafficPorts(object):
                 pfc_wd_test_neighbor_addr = None
 
                 for item in self.bgp_info:
-                    if ipaddress.ip_address(str(item['addr'])).version != 4:
+                    if ipaddress.ip_address(six.text_type(item['addr'])).version != 4:
                         continue
                     if not self.pfc_wd_rx_neighbor_addr and item['peer_addr'] == self.pfc_wd_rx_port_addr:
                         self.pfc_wd_rx_neighbor_addr = item['addr']
@@ -126,7 +127,7 @@ class TrafficPorts(object):
         pfc_wd_test_port = None
         first_pair = False
         for item in self.mg_facts['minigraph_portchannel_interfaces']:
-            if ipaddress.ip_address(str(item['addr'])).version != 4:
+            if ipaddress.ip_address(six.text_type(item['addr'])).version != 4:
                 continue
             pc = item['attachto']
             # first port
@@ -148,7 +149,7 @@ class TrafficPorts(object):
                 pfc_wd_test_neighbor_addr = None
 
                 for bgp_item in self.bgp_info:
-                    if ipaddress.ip_address(str(bgp_item['addr'])).version != 4:
+                    if ipaddress.ip_address(six.text_type(bgp_item['addr'])).version != 4:
                         continue
                     if not self.pfc_wd_rx_neighbor_addr and bgp_item['peer_addr'] == self.pfc_wd_rx_port_addr:
                         self.pfc_wd_rx_neighbor_addr = bgp_item['addr']
@@ -225,7 +226,7 @@ class TrafficPorts(object):
         pfc_wd_test_port = None
         first_pair = False
         for sub_intf in self.mg_facts['minigraph_vlan_sub_interfaces']:
-            if ipaddress.ip_address(str(sub_intf['addr'])).version != 4:
+            if ipaddress.ip_address(six.text_type(sub_intf['addr'])).version != 4:
                 continue
             intf_name, vlan_id = sub_intf['attachto'].split(constants.VLAN_SUB_INTERFACE_SEPARATOR)
             # first port
@@ -246,7 +247,7 @@ class TrafficPorts(object):
                 pfc_wd_test_neighbor_addr = None
 
                 for item in self.bgp_info:
-                    if ipaddress.ip_address(str(item['addr'])).version != 4:
+                    if ipaddress.ip_address(six.text_type(item['addr'])).version != 4:
                         continue
                     if not self.pfc_wd_rx_neighbor_addr and item['peer_addr'] == self.pfc_wd_rx_port_addr:
                         self.pfc_wd_rx_neighbor_addr = item['addr']

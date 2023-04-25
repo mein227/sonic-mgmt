@@ -6,6 +6,7 @@ import time
 import random
 import jinja2
 import pytest
+import six
 
 from tests.common import config_reload
 from tests.common.helpers.assertions import pytest_assert as py_assert
@@ -150,7 +151,7 @@ def define_sub_ports_configuration(request, duthost, ptfhost, ptfadapter, port_t
     interface_num = 2
     ip_subnet = '172.16.0.0/16'
     prefix = 30
-    network = ipaddress.ip_network(ip_subnet)
+    network = ipaddress.ip_network(six.text_type(ip_subnet))
 
     # for normal t0, get_port tries to retrieve test ports from vlan members
     # let's enforce same behavior for t0-backend
@@ -267,11 +268,11 @@ def apply_route_config(request, tbinfo, duthost, ptfhost, port_type, define_sub_
 
         src_port = sub_ports_on_port.pop(0)
         new_sub_ports[src_port] = []
-        src_port_network = ipaddress.ip_network(str(sub_ports[src_port]['ip']), strict=False)
+        src_port_network = ipaddress.ip_network(six.text_type(sub_ports[src_port]['ip']), strict=False)
 
         for next_hop_sub_port in sub_ports_on_port:
             name_of_namespace = 'vnet_for_{}'.format(next_hop_sub_port)
-            dst_port_network = ipaddress.ip_network(str(sub_ports[next_hop_sub_port]['neighbor_ip']), strict=False)
+            dst_port_network = ipaddress.ip_network(six.text_type(sub_ports[next_hop_sub_port]['neighbor_ip']), strict=False)
 
             add_port_to_namespace(ptfhost,
                                   name_of_namespace,
@@ -298,11 +299,11 @@ def apply_route_config(request, tbinfo, duthost, ptfhost, port_type, define_sub_
     }
 
     for src_port, next_hop_sub_ports in list(new_sub_ports.items()):
-        src_port_network = ipaddress.ip_network(str(sub_ports[src_port]['ip']), strict=False)
+        src_port_network = ipaddress.ip_network(six.text_type(sub_ports[src_port]['ip']), strict=False)
 
         for next_hop_sub_port in next_hop_sub_ports:
             sub_port, name_of_namespace = next_hop_sub_port
-            dst_port_network = ipaddress.ip_network(str(sub_ports[sub_port]['ip']), strict=False)
+            dst_port_network = ipaddress.ip_network(six.text_type(sub_ports[sub_port]['ip']), strict=False)
 
             if 'tunneling' not in request._pyfuncitem.name:
                 remove_static_route_from_ptf(ptfhost, src_port_network, sub_ports[sub_port]['ip'], name_of_namespace)
@@ -347,7 +348,7 @@ def apply_route_config_for_port(request, tbinfo, duthost, ptfhost, port_type, de
                                     exclude_sub_interface_ports=True)
 
     # Get additional IP addresses for configuration of RIF on the DUT and PTF
-    subnet = ipaddress.ip_network(str(subnet.broadcast_address + 1) + '/24')
+    subnet = ipaddress.ip_network(six.text_type(subnet.broadcast_address + 1) + '/24')
     subnets = [i for i, _ in zip(subnet.subnets(new_prefix=30), dut_ports)]
 
     sub_ports_keys = sub_ports.copy()
@@ -388,7 +389,7 @@ def apply_route_config_for_port(request, tbinfo, duthost, ptfhost, port_type, de
         # Configure static route between selected sub-ports and selected interfaces on the PTF
         for next_hop_sub_port in sub_ports_on_port:
             name_of_namespace = 'vnet_for_{}'.format(next_hop_sub_port)
-            dst_port_network = ipaddress.ip_network(str(sub_ports[next_hop_sub_port]['neighbor_ip']), strict=False)
+            dst_port_network = ipaddress.ip_network(six.text_type(sub_ports[next_hop_sub_port]['neighbor_ip']), strict=False)
 
             # Add selected sub-port to namespace on the PTF
             add_port_to_namespace(ptfhost,
@@ -418,11 +419,11 @@ def apply_route_config_for_port(request, tbinfo, duthost, ptfhost, port_type, de
 
     # Teardown
     for src_port, next_hop_sub_ports in list(port_map.items()):
-        src_port_network = ipaddress.ip_network(str(next_hop_sub_ports['ip']), strict=False)
+        src_port_network = ipaddress.ip_network(six.text_type(next_hop_sub_ports['ip']), strict=False)
 
         # Remove static route between selected sub-ports and selected interfaces from the PTF
         for sub_port, name_of_namespace in next_hop_sub_ports['dst_ports']:
-            dst_port_network = ipaddress.ip_network(str(sub_ports[sub_port]['ip']), strict=False)
+            dst_port_network = ipaddress.ip_network(six.text_type(sub_ports[sub_port]['ip']), strict=False)
             remove_static_route_from_ptf(ptfhost, src_port_network, sub_ports[sub_port]['ip'], name_of_namespace)
             remove_static_route_from_ptf(ptfhost, dst_port_network, next_hop_sub_ports['neighbor_ip'])
 
@@ -535,7 +536,7 @@ def apply_balancing_config(duthost, ptfhost, ptfadapter, define_sub_ports_config
         src_ports = tuple(all_up_ports.difference(ptf_ports))
 
     network = '1.1.1.0/24'
-    network = ipaddress.ip_network(network)
+    network = ipaddress.ip_network(six.text_type(network))
 
     for port, subnet in zip(list(dut_ports.values()), network.subnets(new_prefix=30)):
         sub_ports_on_port = [sub_port for sub_port in sub_ports if port + '.' in sub_port]

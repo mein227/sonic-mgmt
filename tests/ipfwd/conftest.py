@@ -4,6 +4,7 @@ import logging
 import json
 import time
 from tests.common import constants
+import six
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def get_lag_facts(dut, lag_facts, switch_arptable, mg_facts, ignore_lags,
                 if dut.is_backend_portchannel(intf['attachto'], mg_facts):
                     continue
                 if intf['attachto'] == up_lag:
-                    addr = ip_address(str(intf['addr']))
+                    addr = ip_address(six.text_type(intf['addr']))
                     selected_lag_facts[key + '_router_intf_name'] = intf['attachto']
                     if addr.version == 4:
                         selected_lag_facts[key + '_router_ipv4'] = intf['addr']
@@ -84,7 +85,7 @@ def get_port_facts(dut, mg_facts, port_status, switch_arptable, ignore_intfs,
                     selected_port_facts[key + '_port_ids'] = [mg_facts['minigraph_ptf_indices'][a_intf_name]]
                     selected_port_facts[key + '_router_mac'] = \
                         dut.asic_instance(enum_rand_one_frontend_asic_index).get_router_mac()
-                    addr = ip_address(str(intf['addr']))
+                    addr = ip_address(six.text_type(intf['addr']))
                     selected_port_facts[key + '_router_intf_name'] = intf['attachto']
                     if addr.version == 4:
                         selected_port_facts[key + '_router_ipv4'] = intf['addr']
