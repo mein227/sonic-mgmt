@@ -2387,6 +2387,9 @@ def test_buffer_deployment(duthosts, rand_one_dut_hostname, conn_graph_facts, tb
     # Get dut asic, config, and appl db information
     dut_db_info = DutDbInfo(duthost)
 
+    # management port name
+    mgmt_port_name = ['Ethernet256', 'Ethernet257']
+
     # Check whether the COUNTERS_PG_NAME_MAP and COUNTERS_QUEUE_NAME_MAP exists. Skip ASIC_DB checking if it isn't
     pg_name_map = _compose_dict_from_cli(duthost.shell('redis-cli -n 2 hgetall COUNTERS_PG_NAME_MAP')['stdout'].split())
     queue_name_map = _compose_dict_from_cli(duthost.shell('redis-cli -n 2 hgetall COUNTERS_QUEUE_NAME_MAP')['stdout'].split())
@@ -2462,6 +2465,8 @@ def test_buffer_deployment(duthosts, rand_one_dut_hostname, conn_graph_facts, tb
     lossless_pool_oid = None
     admin_up_ports = set()
     for port in configdb_ports:
+        if port in mgmt_port_name:
+            continue
         logging.info("Checking port buffer information: {}".format(port))
         port_config = dut_db_info.get_port_info_from_config_db(port)
         cable_length = cable_length_map[port]
