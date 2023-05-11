@@ -169,7 +169,7 @@ class PFCStorm(object):
         """
         Run pfc generator script on a specific OS type.
         """
-        if self.peer_device.os == 'sonic':
+        if self.peer_device.os in ('eos', 'sonic'):
             with open(self.extra_vars['template_path']) as tmpl_fd:
                 tmpl = Template(tmpl_fd.read())
                 cmds = tmpl.render(**self.extra_vars).splitlines()

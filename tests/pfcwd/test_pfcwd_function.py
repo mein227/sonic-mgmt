@@ -372,6 +372,14 @@ class SetupPfcwdFunc(object):
             self.ptf.command("ifconfig {} {}".format(ptf_port, self.pfc_wd['test_neighbor_addr']))
             self.ptf.command("ping {} -c 10".format(vlan['addr']))
             self.dut.command("docker exec -i swss arping {} -c 5".format(self.pfc_wd['test_neighbor_addr']))
+        else:
+            self.ptf.script("./scripts/remove_ip.sh")
+            ptf_port = 'eth%s' % self.pfc_wd['test_port_id']
+            self.ptf.command("ifconfig {} {} netmask 255.255.255.254".format(ptf_port, self.pfc_wd['test_neighbor_addr']))
+            self.dut.command("docker exec -i swss arping {} -c 5".format(self.pfc_wd['test_neighbor_addr']))
+            ptf_rx_port = 'eth%s' % self.pfc_wd['rx_port_id'][0]
+            self.ptf.command("ifconfig {} {} netmask 255.255.255.254".format(ptf_rx_port, self.pfc_wd['rx_neighbor_addr']))
+            self.dut.command("docker exec -i swss arping {} -c 5".format(self.pfc_wd['rx_neighbor_addr']))
 
     def storm_setup(self, init=False):
         """
