@@ -1,0 +1,240 @@
+#######################################
+#####         stress_acl          #####
+#######################################
+acl/test_stress_acl.py::test_acl_add_del_stress:
+  skip:
+    reason: "t1 topology no portchannels support"
+    conditions:
+      - "topo_name in ['t1']"
+
+#######################################
+#####      arp                    #####
+#######################################
+arp/test_arp_dualtor.py:
+  skip:
+    reason: "Innovium doesn't support proxy_arp feature and detail please refer ProjectBoard#149761"
+    conditions: 
+      - "asic_type in ['innovium']"
+
+#######################################
+#####           bgp               #####
+#######################################
+bgp/test_bgp_update_timer.py::test_bgp_update_timer:
+  skip:
+    reason: "Unsupported topology: ptf"
+    conditions:
+      - "topo_name in ['ptf32']"
+
+bgp/test_bgpmon.py::test_bgpmon:
+  skip:
+    reason: "Unsupported topology: ptf. Due to no BGP topology config"
+    conditions:
+      - "topo_name in ['ptf32']"
+
+bgp/test_bgp_fact.py:
+  skip:
+    reason: "Unsupported topology: ptf. Due to no BGP topology config"
+    conditions:
+      - "topo_name in ['ptf32']"
+      
+bgp/test_bgp_gr_helper.py:
+  skip:
+    reason: "Unsupported topology: ptf. Due to no BGP topology config"
+    conditions:
+      - "topo_name in ['ptf32']"
+
+#######################################
+#####      fib                    #####
+#######################################
+fib/test_fib.py:
+  skip:
+    reason: "Test traffic balancing across ECMP/LAG members. ptf32 topology no support"
+    conditions:
+      - "topo_name in ['ptf32']"
+
+#######################################
+#####    test_iface_namingmode    #####
+#######################################
+iface_namingmode/test_iface_namingmode.py::TestShowLLDP:
+  skip:
+    reason: "Unsupported ptf32 topology"
+    conditions:
+      - "topo_name in ['ptf32']"
+
+#######################################
+#####           pc                #####
+#######################################
+pc/test_po_update.py::test_po_update_io_no_loss[lab-inno-01-None]:
+  xfail:
+    reason: "Sanity_check already skip 'check_processes'"
+    conditions:
+      - "topo_name in ['ptf32', 't0', 't1']"
+
+#######################################
+#####      platform_tests         #####
+#######################################
+platform_tests/api/test_chassis.py::TestChassisApi:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium', 'marvell']"
+
+platform_tests/api/test_thermal.py::TestThermalApi:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/api/test_chassis_fans.py::TestChassisFans:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/api/test_fan_drawer.py::TestFanDrawerApi:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/api/test_fan_drawer_fans.py::TestFanDrawerFans:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/api/test_sfp.py::TestSfpApi:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium', 'marvell']"
+
+platform_tests/api/test_watchdog.py::TestWatchdogApi:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/api/test_component.py::TestComponentApi:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium', 'marvell']"
+
+platform_tests/api/test_psu.py::TestPsuApi:
+  skip:
+    reason: "Unsupported platform API"
+    conditions:
+      - "asic_type in ['innovium', 'marvell']"
+
+platform_tests/test_reboot.py::test_continuous_reboot:
+  skip:
+    reason: "dut issue"
+    conditions:
+      - "topo_name in ['ptf32', 't0', 't1']"
+
+platform_tests/test_memory_exhaustion.py::test_memory_exhaustion:
+  skip:
+    reason: "Fix in 202012 branch, sonic-mgmt issue#5323"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/test_platform_info.py::test_thermal_control_load_invalid_format_json:
+  skip:
+    reason: "thermal manager is disabled, sonic-mgmt issue#5125"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/test_platform_info.py::test_thermal_control_load_invalid_value_json:
+  skip:
+    reason: "thermal manager is disabled, sonic-mgmt issue#5125"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/test_platform_info.py::test_turn_on_off_psu_and_check_psustatus:
+  skip:
+    reason: "No PSU controller for lab-inno-01, skip rest of the testing in this case"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/test_platform_info.py::test_show_platform_temperature_mocked:
+  skip:
+    reason: "No mocker defined for this platform"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/mellanox:
+  skip:
+    reason: "No support platform test with ASIC mellanox"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/broadcom:
+  skip:
+    reason: "No support platform test with ASIC marvell"
+    conditions:
+      - "asic_type in ['marvell']"
+
+platform_tests/test_advanced_reboot.py:
+  skip:
+    reason: "hang in testing procedure, need debug"
+    conditions:
+      - "asic_type in ['innovium']"
+
+platform_tests/test_cont_warm_reboot.py::test_continuous_reboot:
+  skip:
+    reason: "hang in testing procedure, need debug"
+    conditions:
+      - "asic_type in ['innovium']"
+
+#######################################
+#####            pfcwd            #####
+#######################################
+pfcwd/test_pfcwd_warm_reboot.py::TestPfcwdWb::test_pfcwd_wb[storm-lab-inno-01-None]:
+  skip:
+    reason: "Don't query buffer profile attributes before APPLY_VIEW"
+    conditions:
+      - https://github.com/sonic-net/sonic-swss/issues/2231
+
+pfcwd/test_pfcwd_warm_reboot.py::TestPfcwdWb::test_pfcwd_wb[async_storm-lab-inno-01-None]:
+  skip:
+    reason: "Don't query buffer profile attributes before APPLY_VIEW"
+    conditions:
+      - https://github.com/sonic-net/sonic-swss/issues/2231
+
+#######################################
+#####            pfc              #####
+#######################################
+qos/test_pfc_counters.py::test_pfc_unpause:
+  xfail:
+    reason: "pfc counter is not standard counter. Reference PB#156243"
+    conditions:
+      - "asic_type in ['innovium']"
+
+#######################################
+#####           qos               #####
+#######################################
+qos/test_qos_sai.py:
+  skip:
+    reason: "Rd without build docker-syncd-invm-rpc docker"
+    conditions:
+      - "asic_type in ['innovium']"
+
+#######################################
+#####      show_techsupport       #####
+#######################################
+show_techsupport/test_techsupport.py::test_techsupport:
+  skip:
+    reason: "Unsupported Topology ptf32"
+    conditions:
+      - "asic_type in ['innovium']"
+
+#######################################
+#####      route                  #####
+#######################################
+# https://github.com/sonic-net/sonic-mgmt/issues/5585
+route/test_default_route.py:
+  skip:
+    reason: "route info for the default route is not available in ptf32 and t0 topology"
+    conditions: 
+      - "topo_name in ['ptf32', 't0']"
