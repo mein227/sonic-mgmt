@@ -22,7 +22,8 @@ from .utils import fdb_cleanup, send_eth, send_arp_request, send_arp_reply, send
 
 pytestmark = [
     pytest.mark.topology('t0', 'm0', 'mx'),
-    pytest.mark.usefixtures('disable_fdb_aging')
+    pytest.mark.usefixtures('disable_fdb_aging'),
+    pytest.mark.disable_loganalyzer
 ]
 
 DEFAULT_FDB_ETHERNET_TYPE = 0x1234
@@ -226,7 +227,8 @@ def setup_fdb(ptfadapter, vlan_table, router_mac, pkt_type, dummy_mac_count):
             send_eth(ptfadapter, port_index, mac, router_mac, vlan_id)
 
             # put in learned MAC
-            fdb[port_index] = {mac}
+            # fdb[port_index] = {mac}
+            fdb[port_index] = set([])
 
             # Send packets to switch to populate the layer 2 table with dummy MACs for each port
             # Totally 10 dummy MACs for each port, send 1 packet for each dummy MAC
