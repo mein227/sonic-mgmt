@@ -509,12 +509,14 @@ class AclVlanOuterTest_Base(object):
         outer_vlan_id = test_setup_config['outer_vlan_id']
         vlan_id = test_setup_config['vlan_id']
         dst_ip = test_setup_config['dst_ip']
+        DUMMY_MAC_ADDRESS = "00:11:22:{:02x}:00:00"
 
         logger.info("Verifying scenario tagged={} outer_vlan_id={} vlan_id={} action={}".format(
                     tagged_mode, outer_vlan_id, vlan_id, action))
 
         pkt_type = QINQ if stage == INGRESS else None
-        src_mac = ptfadapter.dataplane.get_mac(0, src_port)
+        # src_mac = ptfadapter.dataplane.get_mac(0, src_port)
+        src_mac = DUMMY_MAC_ADDRESS.format(src_port)  # due to PTF cannot receive self src-mac
         dst_mac = test_setup_config.get('dst_mac', ptfadapter.dataplane.get_mac(0, dst_port))
         pkt, exp_pkt = craft_packet(src_mac=src_mac,
                                     dst_mac=dst_mac,
