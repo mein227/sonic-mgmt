@@ -8,6 +8,7 @@ import socket
 import sys
 import struct
 import re
+import time
 
 import ptf
 import ptf.packet as scapy
