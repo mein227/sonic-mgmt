@@ -161,7 +161,7 @@ veos_groups:
     servers:
         children: [server_1]                      # source: sonic-mgmt/veos
         vars: 
-            topologies: ['t1', 't1-lag', 't1-64-lag', 't1-64-lag-clet', 't0', 't0-56', 't0-52', 'ptf32', 'ptf64', 't0-64', 't0-64-32', 't0-116']  # source: sonic-mgmt/veos
+            topologies: ['t1', 't1-lag', 't1-64-lag', 't1-64-lag-clet', 't0', 't0-56', 't0-52', 'ptf32', 'ptf64', 't0-64', 't0-64-32', 't0-116', 'm0', 'mx']  # source: sonic-mgmt/veos
     server_1:
         children: [vm_host_1, vms_1]                        # source: sonic-mgmt/veos
         vars:
@@ -319,6 +319,34 @@ testbed:
     vms-t7132s-t1-lag:                                          # source: sonic-mgmt/ansible/testbed.csv
         group-name: vms1-1                                  # source: sonic-mgmt/ansible/testbed.csv 
         topo: t1-lag                                            # source: sonic-mgmt/ansible/testbed.csv
+        ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
+        ptf: ptf_vms1-1
+        ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        ptf_ipv6: fec0::178/64
+        server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
+        vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
+        dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
+        comment: Tests Innovium vms                  # source: sonic-mgmt/ansible/testbed.csv
+        ansible_ssh_user: root
+        ansible_ssh_pass: root
+
+    vms-t7132s-m0:                                          # source: sonic-mgmt/ansible/testbed.csv
+        group-name: vms1-1                                  # source: sonic-mgmt/ansible/testbed.csv
+        topo: m0                                            # source: sonic-mgmt/ansible/testbed.csv
+        ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
+        ptf: ptf_vms1-1
+        ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
+        ptf_ipv6: fec0::178/64
+        server: server_1                                    # source: sonic-mgmt/ansible/testbed.csv
+        vm_base: VM0100                                     # source: sonic-mgmt/ansible/testbed.csv
+        dut: lab-inno-01                                    # source: sonic-mgmt/ansible/testbed.csv
+        comment: Tests Innovium vms                  # source: sonic-mgmt/ansible/testbed.csv
+        ansible_ssh_user: root
+        ansible_ssh_pass: root
+
+    vms-t7132s-mx:                                          # source: sonic-mgmt/ansible/testbed.csv
+        group-name: vms1-1                                  # source: sonic-mgmt/ansible/testbed.csv
+        topo: mx                                            # source: sonic-mgmt/ansible/testbed.csv
         ptf_image_name: docker-ptf                 # source: sonic-mgmt/ansible/testbed.csv
         ptf: ptf_vms1-1
         ptf_ip: 10.250.0.178/24                             # source: sonic-mgmt/ansible/testbed.csv
