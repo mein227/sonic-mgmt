@@ -1,5 +1,18 @@
 ---
 
+- conf-name: vms-t7132s-m0
+  group-name: vms1-1
+  topo: m0
+  ptf_image_name: docker-ptf
+  ptf: ptf_vms1-1
+  ptf_ip: 10.250.0.178/24
+  ptf_ipv6: fec0::178/64
+  server: server_1
+  vm_base: VM0100
+  dut:
+    - lab-inno-01
+  comment: Tests Innovium vms
+
 - conf-name: ptf3-i
   group-name: ptf3
   topo: ptf32
@@ -16,6 +29,19 @@
 - conf-name: vms-t7132s-t1-lag
   group-name: vms1-1
   topo: t1-lag
+  ptf_image_name: docker-ptf
+  ptf: ptf_vms1-1
+  ptf_ip: 10.250.0.178/24
+  ptf_ipv6: fec0::178/64
+  server: server_1
+  vm_base: VM0100
+  dut:
+    - lab-inno-01
+  comment: Tests Innovium vms
+
+- conf-name: vms-t7132s-mx
+  group-name: vms1-1
+  topo: mx
   ptf_image_name: docker-ptf
   ptf: ptf_vms1-1
   ptf_ip: 10.250.0.178/24
