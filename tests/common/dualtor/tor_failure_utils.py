@@ -7,11 +7,13 @@ Reboot a ToR
 """
 from tests.common.reboot import reboot, SONIC_SSH_PORT, SONIC_SSH_REGEX, \
                                 REBOOT_TYPE_COLD
+import json
 import ipaddress
 import pytest
 import logging
 import time
 import contextlib
+from tests.common.utilities import wait_until
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,25 @@ def shutdown_tor_heartbeat():
     yield shutdown_tor_heartbeat
 
     for duthost in torhost:
-        duthost.shell("systemctl start mux")
+        # `mux.service` has a strict systemd start rate-limit
+        # (StartLimitBurst=3 / StartLimitIntervalSec=1200). When multiple
+        # test cases in the same module run in sequence, the start budget
+        # can be exhausted and `systemctl start mux` fails with
+        # "start of the service was attempted too often". Detect that and
+        # recover with `systemctl reset-failed mux` followed by a retry.
+        try:
+            duthost.shell("systemctl start mux")
+        except Exception as e:
+            if "start of the service was attempted too often" in str(e):
+                logger.warning(
+                    "mux.service hit systemd start rate-limit on %s; "
+                    "running 'systemctl reset-failed mux' and retrying start",
+                    duthost.hostname,
+                )
+                duthost.shell("systemctl reset-failed mux")
+                duthost.shell("systemctl start mux")
+            else:
+                raise
         duthost.shell("systemctl enable mux")
 
 
@@ -96,7 +116,7 @@ def tor_blackhole_traffic():
 
 
 @pytest.fixture
-def reboot_tor(localhost, wait_for_device_reachable):
+def reboot_tor(localhost, wait_for_device_reachable, wait_for_mux_container):
     """
     Reboot TOR
     """
@@ -113,6 +133,9 @@ def reboot_tor(localhost, wait_for_device_reachable):
 
     for duthost in torhost:
         wait_for_device_reachable(duthost)
+    for duthost in torhost:
+        wait_for_mux_container(duthost)
+        wait_for_pmon_container(duthost)
 
 
 @pytest.fixture
@@ -138,6 +161,74 @@ def wait_for_device_reachable(localhost):
         logger.info("SSH started on {}".format((duthost.hostname)))
 
     return wait_for_device_reachable
+
+
+def check_mux_feature(duthost):
+    """
+    Check output of 'show feature status mux' to find if feature is enabled.
+    For dualtor:
+    $ show feature status mux
+    Feature    State    AutoRestart
+    ---------  -------  -------------
+    mux        enabled  enabled
+
+    For non-dualtor:
+    $ show feature status mux
+    Feature    State            AutoRestart
+    ---------  ---------------  -------------
+    mux        always_disabled  enabled
+    """
+    output = duthost.shell("show feature status mux")['stdout_lines']
+    return "disabled" not in str(output)
+
+
+def get_container_status(duthost, container_name):
+    """Return Docker container state without using a Go template."""
+    output = duthost.shell("docker inspect --type container {}".format(container_name))["stdout"]
+    return json.loads(output)[0]["State"]["Status"]
+
+
+def check_mux_container(duthost):
+    return get_container_status(duthost, "mux") == "running"
+
+
+@pytest.fixture
+def wait_for_mux_container(duthost):
+    """
+    Returns a function that waits for mux container to be available on a device
+    """
+
+    def wait_for_mux_container(duthost, timeout=100, check_interval=1):
+        if not wait_until(timeout, check_interval, 0, check_mux_feature, duthost):
+            logger.info("mux feature is not enabled on {}".format((duthost.hostname)))
+            return
+
+        logger.info("Waiting for mux container to start on {}".format((duthost.hostname)))
+
+        if not wait_until(timeout, check_interval, 0, check_mux_container, duthost):
+            # Could not detect mux container so raise exception
+            raise Exception("Mux container is not up after {} seconds".format(timeout))
+
+    return wait_for_mux_container
+
+
+def check_pmon_container(duthost):
+    return get_container_status(duthost, "pmon") == "running"
+
+
+@pytest.fixture
+def wait_for_pmon_container(duthost):
+    """
+    Returns a function that waits for pmon container to be available on a device
+    """
+
+    def wait_for_pmon_container(duthost, timeout=100, check_interval=1):
+        logger.info("Waiting for pmon container to start on {}".format((duthost.hostname)))
+        if not wait_until(timeout, check_interval, 0, check_pmon_container, duthost):
+            # Could not detect pmon container so raise exception
+            raise Exception("pmon container is not up after {} seconds".format(timeout))
+
+    return wait_for_pmon_container
 
 
 @contextlib.contextmanager

@@ -1,21 +1,37 @@
 import json
 import logging
+import time
 
-from . import constants
-
-from tests.common.utilities import wait
-from tests.common.platform.device_utils import fanout_switch_port_lookup
-from tests.common.config_reload import config_force_option_supported
-from tests.common.reboot import reboot
-from tests.common.reboot import REBOOT_TYPE_WARM, REBOOT_TYPE_FAST, REBOOT_TYPE_COLD
-from tests.common.helpers.parallel import parallel_run, reset_ansible_local_tmp
+from pytest_ansible.results import ModuleResult
 from tests.common import config_reload
 from tests.common.devices.sonic import SonicHost
+from tests.common.helpers.parallel import parallel_run, reset_ansible_local_tmp
+from tests.common.platform.device_utils import fanout_switch_port_lookup
+from tests.common.reboot import REBOOT_TYPE_WARM, REBOOT_TYPE_FAST, REBOOT_TYPE_COLD
+from tests.common.reboot import reboot
+from tests.common.utilities import wait, wait_until
+from . import constants
+from ...helpers.multi_thread_utils import SafeThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
 
-def reboot_dut(dut, localhost, cmd):
+def _make_results_serializable(obj):
+    """Recursively convert objects to JSON-serializable form."""
+    if isinstance(obj, ModuleResult):
+        return _make_results_serializable(dict(obj))
+    if isinstance(obj, dict):
+        return {k: _make_results_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_make_results_serializable(x) for x in obj]
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    if obj is None:
+        return None
+    return str(obj)
+
+
+def reboot_dut(dut, localhost, cmd, reboot_with_running_golden_config=False):
     logging.info('Reboot DUT to recover')
 
     if 'warm' in cmd:
@@ -25,7 +41,19 @@ def reboot_dut(dut, localhost, cmd):
     else:
         reboot_type = REBOOT_TYPE_COLD
 
-    reboot(dut, localhost, reboot_type=reboot_type)
+    if reboot_with_running_golden_config:
+        gold_config_path = "/etc/sonic/running_golden_config.json"
+        gold_config_stats = dut.stat(path=gold_config_path)
+        if gold_config_stats["stat"]["exists"]:
+            logging.info("Reboot DUT with the running golden config")
+            dut.copy(
+                src=gold_config_path,
+                dest="/etc/sonic/config_db.json",
+                remote_src=True,
+                force=True
+            )
+
+    reboot(dut, localhost, reboot_type=reboot_type, safe_reboot=True, check_intf_up_ports=True)
 
 
 def _recover_interfaces(dut, fanouthosts, result, wait_time):
@@ -39,7 +67,8 @@ def _recover_interfaces(dut, fanouthosts, result, wait_time):
             continue
 
         # If internal port is down, do 'config_reload' to recover.
-        if '-IB' in pn or '-Rec' in pn or '-BP' in pn:
+        # Here we do lowercase string search as pn is converted to lowercase
+        if '-ib' in pn or '-rec' in pn or '-bp' in pn:
             action = 'config_reload'
             continue
 
@@ -53,6 +82,16 @@ def _recover_interfaces(dut, fanouthosts, result, wait_time):
         else:
             dut.no_shutdown(port)
     wait(wait_time, msg="Wait {} seconds for interface(s) to restore.".format(wait_time))
+    return action
+
+
+def _recover_monit(dut, result):
+    services_status = result.get('services_status', {})
+    action = 'reboot'
+    if services_status.get('var-log') == 'Resource limit matched':
+        logging.warning("var-log filesystem full on %s, forcing logrotate", dut.hostname)
+        dut.shell("logrotate -f /etc/logrotate.conf", module_ignore_errors=True)
+        action = None
     return action
 
 
@@ -107,7 +146,7 @@ def _neighbor_vm_recover_bgpd(node=None, results=None):
 
 def _neighbor_vm_recover_config(node=None, results=None):
     if isinstance(node["host"], SonicHost):
-        config_reload(node["host"])
+        config_reload(node["host"], is_dut=False)
     return results
 
 
@@ -126,7 +165,9 @@ def neighbor_vm_restore(duthost, nbrhosts, tbinfo, result=None):
                 logger.debug('Results of restoring neighbor VMs: {}'.format(unhealthy_nbrs))
         else:
             results = parallel_run(_neighbor_vm_recover_bgpd, (), {}, list(nbrhosts.values()), timeout=300)
-            logger.debug('Results of restoring neighbor VMs: {}'.format(json.dumps(dict(results))))
+            logger.debug(
+                'Results of restoring neighbor VMs: {}'.format(
+                    json.dumps(_make_results_serializable(dict(results)))))
     return 'config_reload'  # May still need to do a config reload
 
 
@@ -135,7 +176,76 @@ def _recover_with_command(dut, cmd, wait_time):
     wait(wait_time, msg="Wait {} seconds for system to be stable.".format(wait_time))
 
 
-def adaptive_recover(dut, localhost, fanouthosts, nbrhosts, tbinfo, check_results, wait_time):
+def re_announce_routes(ptfhost, localhost, topo_name, ptf_ip, neighbor_number):
+    def _check_exabgp():
+        # Get pid of exabgp processes
+        exabgp_pids = []
+        output = ptfhost.shell("ps aux | grep exabgp/http_api |grep -v grep |  awk '{print $2}'",
+                               module_ignore_errors=True)
+        if output['rc'] != 0:
+            logger.warning("cmd to fetch exabgp pid returned with error: {}".format(output["stderr"]))
+            return False
+        for line in output["stdout_lines"]:
+            if len(line.strip()) == 0:
+                continue
+            exabgp_pids.append(line.strip())
+        # Each bgp neighbor has 2 exabgp process, one is for v4 and another is for v6
+        if len(exabgp_pids) != neighbor_number * 2:
+            logger.info("pids number for exabgp processes is incorrect, expected: {}, actual: {}"
+                        .format(neighbor_number * 2, len(exabgp_pids)))
+            return False
+        # Check whether all sockets for exabgp are created
+        output = ptfhost.shell("ss -nltp | grep -E \"{}\""
+                               .format("|".join(["pid={}".format(pid) for pid in exabgp_pids])),
+                               module_ignore_errors=True)
+        return output["rc"] == 0 and len(output["stdout_lines"]) == neighbor_number * 2
+
+    def _op_routes(action):
+        try:
+            localhost.announce_routes(topo_name=topo_name, ptf_ip=ptf_ip, action=action, path="../ansible/")
+            time.sleep(5)
+        except Exception as e:
+            logger.error("Failed to {} routes with error: {}".format(action, e))
+
+    ptfhost.shell("supervisorctl restart exabgpv4:*", module_ignore_errors=True)
+    ptfhost.shell("supervisorctl restart exabgpv6:*", module_ignore_errors=True)
+    # Wait exabgp to be ready
+    if not wait_until(120, 5, 0, _check_exabgp):
+        logger.error("Not all exabgp process are running")
+
+    _op_routes("withdraw")
+    _op_routes("announce")
+    return None
+
+
+def _recover_bgp(ptfhost, dut, localhost, nbrhosts, tbinfo, result):
+    bgp_result = result.get('bgp')
+    if not bgp_result:
+        logging.warning(
+            "BGP status details unavailable on %s, using config reload",
+            dut.hostname
+        )
+        return 'config_reload'
+
+    default_route_failures = {
+        "no_v4_default_route",
+        "no_v6_default_route",
+    }
+    is_single_asic = dut.facts["num_asic"] == 1
+    is_default_route_only = set(bgp_result).issubset(default_route_failures)
+    if is_single_asic and is_default_route_only:
+        return re_announce_routes(
+            ptfhost,
+            localhost,
+            tbinfo["topo"]["name"],
+            tbinfo["ptf_ip"],
+            len(nbrhosts)
+        )
+
+    return neighbor_vm_restore(dut, nbrhosts, tbinfo, result)
+
+
+def adaptive_recover(ptfhost, dut, localhost, fanouthosts, nbrhosts, tbinfo, check_results, wait_time):
     outstanding_action = None
     for result in check_results:
         if result['failed']:
@@ -143,8 +253,14 @@ def adaptive_recover(dut, localhost, fanouthosts, nbrhosts, tbinfo, check_result
                 action = _recover_interfaces(dut, fanouthosts, result, wait_time)
             elif result['check_item'] == 'services':
                 action = _recover_services(dut, result)
-            elif result['check_item'] == 'bgp' or result['check_item'] == "neighbor_macsec_empty":
+            elif result['check_item'] == 'bgp':
+                action = _recover_bgp(
+                    ptfhost, dut, localhost, nbrhosts, tbinfo, result
+                )
+            elif result['check_item'] == "neighbor_macsec_empty":
                 action = neighbor_vm_restore(dut, nbrhosts, tbinfo, result)
+            elif result['check_item'] == 'monit':
+                action = _recover_monit(dut, result)
             elif result['check_item'] in ['processes', 'mux_simulator']:
                 action = 'config_reload'
             else:
@@ -159,25 +275,55 @@ def adaptive_recover(dut, localhost, fanouthosts, nbrhosts, tbinfo, check_result
                             .format(result, action, outstanding_action))
 
     if outstanding_action:
-        if outstanding_action == "config_reload" and config_force_option_supported(dut):
-            outstanding_action = "config_reload_f"
         method = constants.RECOVER_METHODS[outstanding_action]
         wait_time = method['recover_wait']
-        if method["reboot"]:
-            reboot_dut(dut, localhost, method["cmd"])
+        if method["reload"]:
+            running_golden_config_file_check = dut.shell("[ -f /etc/sonic/running_golden_config.json ]",
+                                                         module_ignore_errors=True)
+            if running_golden_config_file_check.get('rc') == 0:
+                config_source = 'running_golden_config'
+            else:
+                config_source = 'config_db'
+            config_reload(dut, config_source=config_source,
+                          safe_reload=True, check_intf_up_ports=True, wait_for_bgp=True)
+        elif method["reboot"]:
+            reboot_dut(dut, localhost, method["cmd"], reboot_with_running_golden_config=True)
         else:
             _recover_with_command(dut, method['cmd'], wait_time)
 
 
-def recover(dut, localhost, fanouthosts, nbrhosts, tbinfo, check_results, recover_method):
+def recover(ptfhost, dut, localhost, fanouthosts, nbrhosts, tbinfo, check_results, recover_method):
     logger.warning("Try to recover %s using method %s" % (dut.hostname, recover_method))
-    if recover_method == "config_reload" and config_force_option_supported(dut):
-        recover_method = "config_reload_f"
+
     method = constants.RECOVER_METHODS[recover_method]
     wait_time = method['recover_wait']
     if method["adaptive"]:
-        adaptive_recover(dut, localhost, fanouthosts, nbrhosts, tbinfo, check_results, wait_time)
+        adaptive_recover(ptfhost, dut, localhost, fanouthosts, nbrhosts, tbinfo, check_results, wait_time)
+    elif method["reload"]:
+        running_golden_config_file_check = dut.shell("[ -f /etc/sonic/running_golden_config.json ]",
+                                                     module_ignore_errors=True)
+        if running_golden_config_file_check.get('rc') == 0:
+            config_source = 'running_golden_config'
+        else:
+            config_source = 'config_db'
+        config_reload(dut, config_source=config_source,
+                      safe_reload=True, check_intf_up_ports=True, wait_for_bgp=True)
     elif method["reboot"]:
         reboot_dut(dut, localhost, method["cmd"])
     else:
         _recover_with_command(dut, method['cmd'], wait_time)
+
+
+def recover_chassis(duthosts):
+    logger.warning(f"Try to recover chassis {[dut.hostname for dut in duthosts]} using config reload")
+    with SafeThreadPoolExecutor(max_workers=8) as executor:
+        for duthost in duthosts:
+            running_golden_config_file_check = duthost.shell("[ -f /etc/sonic/running_golden_config.json ]",
+                                                             module_ignore_errors=True)
+            if running_golden_config_file_check.get('rc') == 0:
+                config_source = 'running_golden_config'
+            else:
+                config_source = 'minigraph'
+            executor.submit(config_reload, duthost, config_source=config_source,
+                            safe_reload=True, override_config=True,
+                            check_intf_up_ports=True, wait_for_bgp=True)

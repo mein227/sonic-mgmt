@@ -11,26 +11,33 @@
 - name: Start mux simulator
   block:
 
-  - name: Set default Flask version
+  - name: Set Flask and Werkzeug versions
     set_fact:
-      flask_version: "1.1.2"
-      python_command: "python"
+      flask_version: "2.3.3"
+      werkzeug_version: "2.3.7"
 
-  - name: Use newer Flask version for pip3
-    set_fact:
-      flask_version: "2.0.3"
-      python_command: "python3"
-    when: pip_executable == "pip3"
+  - name: Check installed Flask and Werkzeug versions
+    command: >-
+      {{ sonic_testbed_venv }}/bin/python -c
+      "import flask, werkzeug; print(flask.__version__); print(werkzeug.__version__)"
+    register: flask_versions
+    changed_when: false
+    failed_when: false
 
-  - name: Install flask
-    pip: name=flask version={{ flask_version }} state=forcereinstall executable={{ pip_executable }}
+  - name: Install Flask and Werkzeug in venv
+    command: >-
+      uv pip install
+      --python {{ sonic_testbed_venv }}/bin/python
+      flask=={{ flask_version }} werkzeug=={{ werkzeug_version }}
     become: yes
     environment: "{{ proxy_env | default({}) }}"
+    when: flask_versions.rc != 0
+          or flask_versions.stdout_lines != [flask_version, werkzeug_version]
 
   - name: Copy the mux simulator to test server
     copy:
       src: mux_simulator.py
-      dest: "{{ abs_root_path }}"
+      dest: "{{ abs_root_path }}/mux_simulator_{{ mux_simulator_port }}.py"
       mode: 0755
 
   - name: Generate mux-simulator systemd service file
@@ -45,6 +52,18 @@
       state: started
       daemon_reload: yes
     become: yes
+
+  - name: wait for mux-simulator service to fully start for {{ testbed_name }}
+    pause: seconds=1
+
+  - name: Get the mux-simulator service for testbed {{ testbed_name }}
+    systemd:
+      name: mux-simulator-{{ mux_simulator_port }}
+    register: mux_simulator_status
+
+  - name: Fail if the mux-simulator service has exited for testbed {{ testbed_name }}
+    fail: msg="Mux simulator service is not running for {{ testbed_name }}"
+    when: mux_simulator_status.status.ActiveState != "active"
 
   when: mux_simulator_action == "start"
 

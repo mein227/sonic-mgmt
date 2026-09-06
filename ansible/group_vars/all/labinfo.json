@@ -9,20 +9,14 @@
         "Arista-7170-64C": "Arista",
         "Arista-VM": "Arista",
         "Nexus-3064-NX": "Nexus",
+        "cisco-8101-p4-32x100-vs" : "Cisco",
         "Force10-S6100": "Force10",
-        "Force10-S6000": "Force10",
-        "Seastone-DX010": "Smis",
-        "Supermicro_t7032": "Sonic",
-        "Arista-7060DX4-32": "Arista",
-        "DellEMC-Z9332f-O32": "Sonic",
-        "Seastone_2": "Sonic",
-		"sse_g3748": "Sonic",
-		"Supermicro_sse_t7132s": "Sonic"
+        "Force10-S6000": "Force10"
     },
     "switch_login": {
-        "Nexus": { 
+        "Nexus": {
             "user": "admin",
-            "passwd": ["password"], 
+            "passwd": ["password"],
             "enable": null
         },
         "Arista": {
@@ -30,20 +24,15 @@
             "passwd": ["password", "123456"],
             "enable": ["", null]
         },
+        "Cisco": {
+            "user": "admin",
+            "passwd": ["admin"],
+            "enable": ["admin"]
+        },
         "Force10": {
             "user": "admin",
             "passwd": ["password"],
-            "enable": ["password"] 
-        },
-        "Sonic": {
-            "user": "admin",
-            "passwd": ["YourPaSsWoRd", "password"],
-            "enable": null
-        },
-        "Smis": {
-            "user": "ADMIN",
-            "passwd": ["ADMIN"],
-            "enable": null
+            "enable": ["password"]
         }
     }
 }

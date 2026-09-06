@@ -71,8 +71,6 @@ def get_cable_supported_speeds_helper(duthost):
         return MlnxCableSupportedSpeedsHelper
     elif asic_type == "barefoot":
         return BfnCableSupportedSpeedsHelper
-    elif asic_type == "innovium":
-        return InnoCableSupportedSpeedsHelper
     else:
         return None
 
@@ -102,13 +100,15 @@ class MlnxCableSupportedSpeedsHelper(object):
         if (duthost, dut_port_name) in cls.supported_speeds:
             return cls.supported_speeds[duthost, dut_port_name]
 
+        # Command to get ASIC device (PCI) path on DUT
+        ASIC_DETECT_GET_DEVICE_PATH_CMD = '/usr/bin/asic_detect/asic_detect.sh -p'
         if duthost not in cls.sorted_ports:
             int_status = duthost.show_interface(command="status")["ansible_facts"]['int_status']
             ports = natsorted([port_name for port_name in list(int_status.keys())])
             cls.sorted_ports[duthost] = ports
 
         if not cls.device_path:
-            cls.device_path = duthost.shell('ls /dev/mst/*_pci_cr0')['stdout'].strip()
+            cls.device_path = duthost.shell(ASIC_DETECT_GET_DEVICE_PATH_CMD)['stdout'].strip()
         port_index = cls.sorted_ports[duthost].index(dut_port_name) + 1
         cmd = 'mlxlink -d {} -p {} | grep "Supported Cable Speed"'.format(cls.device_path, port_index)
         output = duthost.shell(cmd)['stdout'].strip()
@@ -125,14 +125,6 @@ class MlnxCableSupportedSpeedsHelper(object):
 
 
 class BfnCableSupportedSpeedsHelper(object):
-
-    @classmethod
-    def get_cable_supported_speeds(cls, duthost, dut_port_name):
-
-        return duthost.get_supported_speeds(dut_port_name)
-
-
-class InnoCableSupportedSpeedsHelper(object):
 
     @classmethod
     def get_cable_supported_speeds(cls, duthost, dut_port_name):

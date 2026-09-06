@@ -4,7 +4,6 @@ import logging
 import json
 import time
 from tests.common import constants
-import six
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +33,12 @@ def get_lag_facts(dut, lag_facts, switch_arptable, mg_facts, ignore_lags,
                 [mg_facts['minigraph_ptf_indices'][intf] for intf in a_lag_data['po_config']['ports']]
             selected_lag_facts[key + '_router_mac'] = \
                 dut.asic_instance(enum_rand_one_frontend_asic_index).get_router_mac()
+            selected_lag_facts[key + '_port'] = [intf for intf in a_lag_data['po_config']['ports']]
             for intf in mg_facts['minigraph_portchannel_interfaces']:
                 if dut.is_backend_portchannel(intf['attachto'], mg_facts):
                     continue
                 if intf['attachto'] == up_lag:
-                    addr = ip_address(six.text_type(intf['addr']))
+                    addr = ip_address(str(intf['addr']))
                     selected_lag_facts[key + '_router_intf_name'] = intf['attachto']
                     if addr.version == 4:
                         selected_lag_facts[key + '_router_ipv4'] = intf['addr']
@@ -48,6 +48,9 @@ def get_lag_facts(dut, lag_facts, switch_arptable, mg_facts, ignore_lags,
                     elif addr.version == 6:
                         selected_lag_facts[key + '_router_ipv6'] = intf['addr']
                         selected_lag_facts[key + '_host_ipv6'] = intf['peer_addr']
+                        selected_lag_facts[key + '_host_mac'] = (
+                            switch_arptable['arptable']['v6'][intf['peer_addr']]['macaddress']
+                        )
             logger.info("{} lag is {}".format(key, up_lag))
             break
 
@@ -85,8 +88,9 @@ def get_port_facts(dut, mg_facts, port_status, switch_arptable, ignore_intfs,
                     selected_port_facts[key + '_port_ids'] = [mg_facts['minigraph_ptf_indices'][a_intf_name]]
                     selected_port_facts[key + '_router_mac'] = \
                         dut.asic_instance(enum_rand_one_frontend_asic_index).get_router_mac()
-                    addr = ip_address(six.text_type(intf['addr']))
+                    addr = ip_address(str(intf['addr']))
                     selected_port_facts[key + '_router_intf_name'] = intf['attachto']
+                    selected_port_facts[key + '_port'] = [a_intf_name]
                     if addr.version == 4:
                         selected_port_facts[key + '_router_ipv4'] = intf['addr']
                         selected_port_facts[key + '_host_ipv4'] = intf['peer_addr']
@@ -95,6 +99,8 @@ def get_port_facts(dut, mg_facts, port_status, switch_arptable, ignore_intfs,
                     elif addr.version == 6:
                         selected_port_facts[key + '_router_ipv6'] = intf['addr']
                         selected_port_facts[key + '_host_ipv6'] = intf['peer_addr']
+                        selected_port_facts[key + '_host_mac'] = \
+                            switch_arptable['arptable']['v6'][intf['peer_addr']]['macaddress']
             if up_port:
                 logger.info("{} port is {}".format(key, up_port))
                 break

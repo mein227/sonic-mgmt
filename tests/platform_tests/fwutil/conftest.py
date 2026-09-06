@@ -1,11 +1,7 @@
-import tarfile
-import json
 import pytest
 import logging
 import os
-from random import randrange
-import subprocess
-from fwutil_common import show_firmware
+from tests.common.helpers.firmware_helper import show_firmware
 
 logger = logging.getLogger(__name__)
 
@@ -16,52 +12,56 @@ FS_RW_TEMPLATE = "/host/image-{}/rw"
 FS_WORK_TEMPLATE = "/host/image-{}/work"
 FS_MOUNTPOINT_TEMPLATE = "/tmp/image-{}-fs"
 OVERLAY_MOUNTPOINT_TEMPLATE = "/tmp/image-{}-overlay"
+LOCAL_HTTP_SERVER_PORT = 8081
+
+
+def pytest_addoption(parser):
+    """
+    Adds pytest options that are used by fwutil tests
+    """
+
+    parser.addoption(
+        "--shutdown_bgp", action="store_true", default=False, help="Shutdown bgp before getting fw image from url"
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def shutdown_bgp(request, duthost):
+    if request.config.getoption('shutdown_bgp'):
+        duthost.command("sudo config bgp shutdown all")
+        duthost.command("sudo config save -y")
+
+    yield
+
+    if request.config.getoption('shutdown_bgp'):
+        duthost.command("sudo config bgp startup all")
+        duthost.command("sudo config save -y")
 
 
 def check_path_exists(duthost, path):
     return duthost.stat(path=path)["stat"]["exists"]
 
 
-def pytest_generate_tests(metafunc):
-    val = metafunc.config.getoption('--fw-pkg')
-    if 'fw_pkg_name' in metafunc.fixturenames:
-        metafunc.parametrize('fw_pkg_name', [val], scope="module")
-
-
-@pytest.fixture(scope='module')
-def fw_pkg(fw_pkg_name):
-    if fw_pkg_name is None:
-        pytest.skip("No fw package specified.")
-    logger.info("Unpacking firmware package to ./firmware")
-    try:
-        os.mkdir("firmware")
-    except OSError:
-        pass  # Already exists, thats fine
-    with tarfile.open(fw_pkg_name, "r:gz") as f:
-        f.extractall("./firmware/")
-        with open('./firmware/firmware.json', 'r') as fw:
-            fw_data = json.load(fw)
-            yield fw_data
-    subprocess.call("rm -rf firmware", shell=True)
-
-
-@pytest.fixture(scope='function')
-def random_component(duthost, fw_pkg):
-    chass = list(show_firmware(duthost)["chassis"].keys())[0]
-    components = list(fw_pkg["chassis"].get(chass, {}).get("component", []).keys())
-    if 'ONIE' in components:
-        components.remove('ONIE')
-    if len(components) == 0:
-        pytest.skip("No suitable components found in config file for platform {}.".format(duthost.facts['platform']))
-    return components[randrange(len(components))]
+@pytest.fixture(scope='function', params=["CPLD", "ONIE", "BIOS", "FPGA"])
+def component(request, duthost, fw_pkg):
+    component_type = request.param
+    chassis = list(show_firmware(duthost)["chassis"].keys())[0]
+    available_components = list(fw_pkg["chassis"].get(chassis, {}).get("component", {}).keys())
+    if len(available_components) > 0:
+        for component in available_components:
+            if component_type in component:
+                return component
+    pytest.skip(f"No suitable components found in config file for "
+                f"platform {duthost.facts['platform']}, firmware type {component_type}.")
 
 
 @pytest.fixture(scope='function')
 def host_firmware(localhost, duthost):
-    logger.info("Starting local python server to test URL firmware update....")
-    comm = "python3 -m http.server --directory {}".format(os.path.join(DEVICES_PATH, duthost.facts['platform']))
-    duthost.command(comm, module_ignore_errors=True, module_async=True)
-    yield "http://localhost:8000/"
+    logger.info("Starting local python server on port {} to test URL firmware update".format(LOCAL_HTTP_SERVER_PORT))
+    comm = "python3 -m http.server {} --directory {}".format(
+        LOCAL_HTTP_SERVER_PORT, os.path.join(DEVICES_PATH, duthost.facts['platform']))
+    duthost.command(comm, module_async=True)
+    yield "http://localhost:{}/".format(LOCAL_HTTP_SERVER_PORT)
     logger.info("Stopping local python server.")
     duthost.command('pkill -f "{}"'.format(comm), module_ignore_errors=True)
 

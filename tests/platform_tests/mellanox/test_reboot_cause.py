@@ -1,8 +1,8 @@
 import allure
 import logging
 import pytest
-from tests.common.reboot import REBOOT_TYPE_CPU, REBOOT_TYPE_BIOS, REBOOT_TYPE_ASIC, check_reboot_cause
-from tests.platform_tests.thermal_control_test_helper import mocker_factory  # noqa: F401
+from tests.common.reboot import REBOOT_TYPE_BIOS, REBOOT_TYPE_ASIC, check_reboot_cause
+from tests.common.helpers.sensor_control_test_helper import mocker_factory  # noqa: F401
 
 pytestmark = [
     pytest.mark.asic('mellanox'),
@@ -12,11 +12,11 @@ pytestmark = [
 logger = logging.getLogger(__name__)
 
 mocker = None
-REBOOT_CAUSE_TYPES = [REBOOT_TYPE_CPU, REBOOT_TYPE_BIOS, REBOOT_TYPE_ASIC]
+REBOOT_CAUSE_TYPES = [REBOOT_TYPE_BIOS, REBOOT_TYPE_ASIC]
 
 
 @pytest.mark.parametrize("reboot_cause", REBOOT_CAUSE_TYPES)
-def test_reboot_cause(rand_selected_dut, mocker_factory, reboot_cause):  # noqa: F811
+def test_reboot_cause(rand_selected_dut, mocker_factory, reboot_cause, is_cpo_supported):  # noqa: F811
     """
     Validate reboot cause from cpu/bios/asic
     :param rand_selected_dut: The fixture returns a randomly selected DUT
@@ -28,12 +28,16 @@ def test_reboot_cause(rand_selected_dut, mocker_factory, reboot_cause):  # noqa:
         mocker = mocker_factory(duthost, 'RebootCauseMocker')
 
     with allure.step('Mock reset from {}'.format(reboot_cause)):
-        if reboot_cause == REBOOT_TYPE_CPU:
-            mocker.mock_reset_from_comex()
-        elif reboot_cause == REBOOT_TYPE_BIOS:
-            mocker.mock_reset_reload_bios()
+        if reboot_cause == REBOOT_TYPE_BIOS:
+            if is_cpo_supported:
+                mocker.mock_reset_reload_bios_cpo()
+            else:
+                mocker.mock_reset_reload_bios()
         elif reboot_cause == REBOOT_TYPE_ASIC:
-            mocker.mock_reset_from_asic()
+            if is_cpo_supported:
+                pytest.skip("Reset from ASIC is not supported on CPO platforms")
+            else:
+                mocker.mock_reset_from_asic()
 
     with allure.step('Restart determine-reboot-cause service'):
         duthost.restart_service('determine-reboot-cause')

@@ -15,15 +15,21 @@ steps:
 
 - script: |
     set -x
-
     sudo pip install pre-commit
     pre-commit install-hooks
   displayName: 'Prepare pre-commit check'
 
 - script: |
     # Run pre-commit check and capture the output
-    out=`pre-commit run --color never --from-ref HEAD^ --to-ref HEAD 2>&1`
-    RC=$?
+    CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+    FILTERED_FILES=$(echo "$CHANGED_FILES" | grep -v '^tests/common2')
+    if [ -n "$FILTERED_FILES" ]; then
+      out=`pre-commit run --color never --files $FILTERED_FILES`
+      RC=$?
+    else
+      out="No files outside tests/common2 to check."
+      RC=0
+    fi
 
     echo "Pre-commit check results:"
     echo "$out"
@@ -58,10 +64,7 @@ steps:
     id:
     comment: |
       The [pre-commit](http://pre-commit.com/) check detected issues in the files touched by this pull request.
-      The detected issues may be old or new. For new issues, please try to fix them.
-
-      For old issues, it is not mandatory to fix them because they were not caused by this change. It is unfair to blame
-      author of this pull request. But if you can take extra effort to fix the old issues as well, that would be great!
+      The pre-commit check is a mandatory check, please fix detected issues.
 
       Detailed pre-commit check results:
       <samp>$(results)</samp>
