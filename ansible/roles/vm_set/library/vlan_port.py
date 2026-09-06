@@ -4,7 +4,7 @@ import subprocess
 import logging
 import traceback
 
-from ansible.module_utils.basic import *
+from ansible.module_utils.basic import AnsibleModule
 
 DOCUMENTATION = '''
 module: vlan_port
@@ -51,13 +51,20 @@ class VlanPort(object):
 
     def create_vlan_port(self, port, vlan_id):
         vlan_port = "%s.%d" % (port, vlan_id)
-        VlanPort.log_show_vlan_intf(port, vlan_id)
-        try:
+        existing_vlan_intf = VlanPort.get_vlan_intf(port, vlan_id)
+        if existing_vlan_intf is not None:
+            self.destroy_vlan_port(existing_vlan_intf)
+        elif VlanPort.iface_exists(vlan_port):
             self.destroy_vlan_port(vlan_port)
-        except Exception:
-            pass
 
-        VlanPort.cmd('vconfig add %s %d' % (port, vlan_id))
+        try:
+            VlanPort.cmd('ip link add link %s name %s type vlan id %d' % (port, vlan_port, vlan_id))
+        except Exception as detail:
+            # Allow benign races where another process created the interface.
+            if VlanPort.iface_exists(vlan_port):
+                logging.debug("VLAN interface %s already exists after add failure: %s", vlan_port, detail)
+            else:
+                raise
         VlanPort.iface_up(vlan_port)
 
         return
@@ -76,7 +83,11 @@ class VlanPort(object):
     def remove_vlan_ports(self):
         for vlan_id in self.vlan_ids.values():
             vlan_port = "%s.%d" % (self.external_port, vlan_id)
-            self.destroy_vlan_port(vlan_port)
+            existing_vlan_intf = VlanPort.get_vlan_intf(self.external_port, vlan_id)
+            if existing_vlan_intf is not None:
+                self.destroy_vlan_port(existing_vlan_intf)
+            else:
+                self.destroy_vlan_port(vlan_port)
 
     @staticmethod
     def ifconfig(cmdline):
@@ -111,20 +122,36 @@ class VlanPort(object):
         return bool(iface)
 
     @staticmethod
-    def log_show_vlan_intf(port, vlan_id):
-        cmdline = "cat /proc/net/vlan/config | grep -E '\|[[:space:]]*%s[[:space:]]*\|'" % vlan_id
-        out = VlanPort.cmd(cmdline, ignore_error=True)
+    def get_vlan_intf(port, vlan_id):
+        out = VlanPort.cmd('cat /proc/net/vlan/config', ignore_error=True)
+        if not out.strip():
+            logging.debug(
+                "VLAN config /proc/net/vlan/config is unavailable or empty; 8021q module may not be loaded")
+            return None
+
         lines = out.splitlines()
-        if len(lines) == 0:
-            logging.debug("Port %s doesn't has vlan interface with vlan id %s" % (port, vlan_id))
-        elif len(lines) == 1:
+        for line in lines:
+            if '|' not in line:
+                continue
+
+            items = [item.strip() for item in line.split('|')]
+            if len(items) != 3:
+                continue
+
+            vlan_intf = items[0]
+            config_vlan_id = items[1]
+            config_port = items[2]
+
+            if config_port != port:
+                continue
+
             try:
-                vlan_intf, vlan_id, port = lines[0].strip().split("|")
-                logging.debug("Port %s has vlan interface %s with vlan id %s" % (port, vlan_intf, vlan_id))
-            except Exception:
-                logging.warn("Unexpected output:\n%s", out)
-        else:
-            logging.warn("Unexpected output:\n%s", out)
+                if int(config_vlan_id) == int(vlan_id):
+                    return vlan_intf
+            except ValueError:
+                continue
+
+        return None
 
     @staticmethod
     def iface_updown(iface_name, state, pid):
@@ -136,12 +163,15 @@ class VlanPort(object):
     @staticmethod
     def cmd(cmdline, ignore_error=False):
         logging.debug("CMD: %s", cmdline)
-        process = subprocess.Popen(cmdline, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        process = subprocess.Popen(  # nosemgrep: subprocess-shell-true
+            cmdline, stdout=subprocess.PIPE,
+            stdin=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)  # nosemgrep: subprocess-shell-true
         stdout, stderr = process.communicate()
         ret_code = process.returncode
 
         if ret_code != 0 and not ignore_error:
-            raise Exception("ret_code=%d, error message=%s. cmd=%s" % (ret_code, stderr, cmdline))
+            raise Exception("ret_code=%d, error message=%s. cmd=%s" %
+                            (ret_code, stderr, cmdline))
 
         if ret_code == 0:
             logging.info("OUTPUT: %s", stdout)
@@ -160,7 +190,8 @@ def main():
     ))
 
     # log separator
-    logging.info("--------------------------------------------------------------------")
+    logging.info(
+        "--------------------------------------------------------------------")
 
     cmd = module.params['cmd']
     external_port = module.params['external_port']
@@ -180,9 +211,12 @@ def main():
         for a_port_index, vid in vlan_ids.items():
             fp_ports[a_port_index] = fp_port_templ % vid
 
-        module.exit_json(changed=False, ansible_facts={'dut_fp_ports': fp_ports})
+        module.exit_json(changed=False, ansible_facts={
+                         'dut_fp_ports': fp_ports})
     except Exception as detail:
-        module.fail_json(msg="ERROR: %s, TRACEBACK: %s" % (repr(detail), traceback.format_exc()))
+        module.fail_json(msg="ERROR: %s, TRACEBACK: %s" %
+                         (repr(detail), traceback.format_exc()))
+
 
 if __name__ == "__main__":
     main()

@@ -8,14 +8,14 @@ import logging
 import jinja2
 import json
 import os
-
+import six
 import scapy.all as scapyall
 import ptf.testutils as testutils
-from operator import itemgetter
 from itertools import groupby
 
 from tests.common.dualtor.dual_tor_common import CableType
-from tests.common.utilities import wait_until
+from tests.common.helpers.constants import ARP_RESPONDER_DEFAULT_CONFIG
+from tests.common.utilities import wait_until, convert_scapy_packet_to_bytes
 from natsort import natsorted
 from collections import defaultdict
 
@@ -37,20 +37,29 @@ logger = logging.getLogger(__name__)
 class DualTorIO:
     """Class to conduct IO over ports in `active-standby` mode."""
 
-    def __init__(self, activehost, standbyhost, ptfhost, ptfadapter, tbinfo,
-                 io_ready, tor_vlan_port=None, send_interval=0.01, cable_type=CableType.active_standby):
+    def __init__(self, activehost, standbyhost, ptfhost, ptfadapter, vmhost, tbinfo,
+                 io_ready, tor_vlan_port=None, send_interval=0.01, cable_type=CableType.active_standby,
+                 random_dst=None):
         self.tor_pc_intf = None
         self.tor_vlan_intf = tor_vlan_port
         self.duthost = activehost
         self.ptfadapter = ptfadapter
         self.ptfhost = ptfhost
+        self.vmhost = vmhost
         self.tbinfo = tbinfo
         self.io_ready_event = io_ready
         self.dut_mac = self.duthost.facts["router_mac"]
         self.active_mac = self.dut_mac
         self.standby_mac = standbyhost.facts["router_mac"]
+        self.tcp_sport = 1234
 
         self.cable_type = cable_type
+
+        if random_dst is None:
+            # if random_dst is not set, default to true for active standby dualtor.
+            self.random_dst = (self.cable_type == CableType.active_standby)
+        else:
+            self.random_dst = random_dst
 
         self.dataplane = self.ptfadapter.dataplane
         self.dataplane.flush()
@@ -92,16 +101,21 @@ class DualTorIO:
 
         self.ptf_intf_to_soc_ip_map = self._generate_soc_ip_map()
 
+        self.ptf_intf_to_mac_map = {}
+        for ptf_intf in list(self.ptf_intf_to_server_ip_map.keys()):
+            self.ptf_intf_to_mac_map[ptf_intf] = self.ptfadapter.dataplane.get_mac(0, ptf_intf)
+
         logger.info("VLAN interfaces: {}".format(str(self.vlan_interfaces)))
         logger.info("PORTCHANNEL interfaces: {}".format(str(self.tor_pc_intfs)))
         logger.info("Selected testing interfaces: %s", self.test_interfaces)
+        logger.info("Selected ToR vlan interfaces: %s", self.tor_vlan_intf)
 
         self.time_to_listen = 300.0
         self.sniff_time_incr = 0
         # Inter-packet send-interval (minimum interval 3.5ms)
         if send_interval < 0.0035:
             if send_interval is not None:
-                logger.warn("Minimum packet send-interval is .0035s. \
+                logger.warning("Minimum packet send-interval is .0035s. \
                     Ignoring user-provided interval {}".format(send_interval))
             self.send_interval = 0.0035
         else:
@@ -161,7 +175,7 @@ class DualTorIO:
         for intf in natsorted(self.test_interfaces):
             ptf_intf = self.tor_to_ptf_intf_map[intf]
             server_ip = str(self.mux_cable_table[intf]['server_ipv4'].split("/")[0])
-            ptf_to_server_map[ptf_intf] = [server_ip]
+            ptf_to_server_map[ptf_intf] = server_ip
 
         logger.debug('VLAN intf to server IP map: {}'.format(json.dumps(ptf_to_server_map, indent=4, sort_keys=True)))
         return ptf_to_server_map
@@ -183,7 +197,7 @@ class DualTorIO:
         for intf in natsorted(self.test_interfaces):
             ptf_intf = self.tor_to_ptf_intf_map[intf]
             soc_ip = str(self.mux_cable_table[intf]['soc_ipv4'].split('/')[0])
-            ptf_to_soc_map[ptf_intf] = [soc_ip]
+            ptf_to_soc_map[ptf_intf] = soc_ip
 
         logger.debug('VLAN intf to soc IP map: {}'.format(json.dumps(ptf_to_soc_map, indent=4, sort_keys=True)))
         return ptf_to_soc_map
@@ -203,22 +217,15 @@ class DualTorIO:
         """
         arp_responder_conf = {}
         for intf, ip in list(self.ptf_intf_to_server_ip_map.items()):
-            arp_responder_conf['eth{}'.format(intf)] = ip
-        with open("/tmp/from_t1.json", "w") as fp:
+            arp_responder_conf['eth{}'.format(intf)] = [ip]
+        with open(ARP_RESPONDER_DEFAULT_CONFIG, "w") as fp:
             json.dump(arp_responder_conf, fp, indent=4, sort_keys=True)
-        self.ptfhost.copy(src="/tmp/from_t1.json", dest="/tmp/from_t1.json")
+        self.ptfhost.copy(src=ARP_RESPONDER_DEFAULT_CONFIG, dest=ARP_RESPONDER_DEFAULT_CONFIG, force=True)
         self.ptfhost.shell("supervisorctl reread && supervisorctl update")
         self.ptfhost.shell("supervisorctl restart arp_responder")
         logger.info("arp_responder restarted")
 
-    def start_io_test(self, traffic_direction=None):
-        """
-        @summary: The entry point to start the TOR dataplane I/O test.
-        Args:
-            traffic_direction (str): A string to decide the
-                traffic direction (T1 to server / server to T1 / T1 to soc / soc to T1)
-                Allowed values: server_to_t1, t1_to_server, soc_to_t1, t1_to_soc
-        """
+    def generate_traffic(self, traffic_direction=None):
         # Check in a conditional for better readability
         self.traffic_direction = traffic_direction
         if traffic_direction == "server_to_t1":
@@ -229,10 +236,16 @@ class DualTorIO:
             self.generate_upstream_traffic(src="soc")
         elif traffic_direction == "t1_to_soc":
             self.generate_downstream_traffic(dst="soc")
+        elif traffic_direction == "server_to_server":
+            self.generate_server_to_server_traffic()
         else:
             logger.error("Traffic direction not provided or invalid")
             return
 
+    def start_io_test(self):
+        """
+        @summary: The entry point to start the TOR dataplane I/O test.
+        """
         self.send_and_sniff()
 
     def generate_downstream_traffic(self, dst='server'):
@@ -291,9 +304,10 @@ class DualTorIO:
             eth_dst=eth_dst,
             eth_src=eth_src,
             ip_ttl=ip_ttl,
-            tcp_dport=TCP_DST_PORT
+            tcp_dport=TCP_DST_PORT,
+            tcp_sport=self.tcp_sport
         )
-        tcp_tx_packet_orig = scapyall.Ether(str(tcp_tx_packet_orig))
+        tcp_tx_packet_orig = scapyall.Ether(convert_scapy_packet_to_bytes(tcp_tx_packet_orig))
         payload_suffix = "X" * 60
         for i in range(self.packets_per_server):
             for server_ip in server_ip_list:
@@ -313,7 +327,7 @@ class DualTorIO:
                 packet.load = payload
                 packet[scapyall.TCP].chksum = None
                 packet[scapyall.IP].chksum = None
-                self.packets_list.append((ptf_t1_src_intf, str(packet)))
+                self.packets_list.append((ptf_t1_src_intf, convert_scapy_packet_to_bytes(packet)))
 
         self.sent_pkt_dst_mac = self.dut_mac
         self.received_pkt_src_mac = [self.vlan_mac]
@@ -332,10 +346,6 @@ class DualTorIO:
             vlan_src_intfs = self.test_interfaces
 
         ptf_intf_to_ip_map = self.ptf_intf_to_server_ip_map if src == 'server' else self.ptf_intf_to_soc_ip_map
-        ptf_intf_to_mac_map = {}
-
-        for ptf_intf in list(ptf_intf_to_ip_map.keys()):
-            ptf_intf_to_mac_map[ptf_intf] = self.ptfadapter.dataplane.get_mac(0, ptf_intf)
 
         logger.info("-"*20 + "{} to T1 packet".format(src) + "-"*20)
         if self.tor_vlan_intf is None:
@@ -343,7 +353,7 @@ class DualTorIO:
             src_ip = 'random'
         else:
             ptf_port = self.tor_to_ptf_intf_map[self.tor_vlan_intf]
-            src_mac = ptf_intf_to_mac_map[ptf_port]
+            src_mac = self.ptf_intf_to_mac_map[ptf_port]
             src_ip = ptf_intf_to_ip_map[ptf_port]
         logger.info(
             "Ethernet address: dst: {} src: {}".format(
@@ -355,7 +365,7 @@ class DualTorIO:
                 'random', src_ip
             )
         )
-        logger.info("TCP port: dst: {} src: 1234".format(TCP_DST_PORT))
+        logger.info("TCP port: dst: {} src: {}".format(TCP_DST_PORT, self.tcp_sport))
         logger.info("DUT ToR MAC: {}, PEER ToR MAC: {}".format(self.active_mac, self.standby_mac))
         logger.info("VLAN MAC: {}".format(self.vlan_mac))
         logger.info("-"*50)
@@ -369,9 +379,10 @@ class DualTorIO:
         # server/soc #2, etc.
         tcp_tx_packet_orig = testutils.simple_tcp_packet(
             eth_dst=self.vlan_mac,
-            tcp_dport=TCP_DST_PORT
+            tcp_dport=TCP_DST_PORT,
+            tcp_sport=self.tcp_sport
         )
-        tcp_tx_packet_orig = scapyall.Ether(str(tcp_tx_packet_orig))
+        tcp_tx_packet_orig = scapyall.Ether(convert_scapy_packet_to_bytes(tcp_tx_packet_orig))
         payload_suffix = "X" * 60
 
         # use the same dst ip to ensure that packets from one server are always forwarded
@@ -381,19 +392,143 @@ class DualTorIO:
             for vlan_intf in vlan_src_intfs:
                 ptf_src_intf = self.tor_to_ptf_intf_map[vlan_intf]
                 server_ip = ptf_intf_to_ip_map[ptf_src_intf]
-                eth_src = ptf_intf_to_mac_map[ptf_src_intf]
+                eth_src = self.ptf_intf_to_mac_map[ptf_src_intf]
                 payload = str(i) + payload_suffix
                 packet = tcp_tx_packet_orig.copy()
                 packet[scapyall.Ether].src = eth_src
                 packet[scapyall.IP].src = server_ip
-                packet[scapyall.IP].dst = dst_ips[vlan_intf] \
-                    if self.cable_type == CableType.active_active else self.random_host_ip()
+                if self.random_dst:
+                    packet[scapyall.IP].dst = self.random_host_ip()
+                else:
+                    packet[scapyall.IP].dst = dst_ips[vlan_intf]
                 packet.load = payload
                 packet[scapyall.TCP].chksum = None
                 packet[scapyall.IP].chksum = None
-                self.packets_list.append((ptf_src_intf, str(packet)))
+                self.packets_list.append((ptf_src_intf, convert_scapy_packet_to_bytes(packet)))
         self.sent_pkt_dst_mac = self.vlan_mac
         self.received_pkt_src_mac = [self.active_mac, self.standby_mac]
+
+    def _generate_upstream_packet_to_target_duthost(self, vlan_src_intf, tcp_packet):
+        """Generate a packet to the target duthost."""
+        packet = tcp_packet.copy()
+        if self.cable_type == CableType.active_active:
+            # for active-active, the upstream packet is ECMPed. So let's increase
+            # the tcp source port till we get one packet that is determined to be
+            # forwarded to the target duthost
+            src_ptf_port_index = self.tor_to_ptf_intf_map[vlan_src_intf]
+
+            # get the bridge that the vlan source interface is connected to
+            active_active_vmhost_bridge = "baa-%s-%d" % (self.tbinfo["group-name"], src_ptf_port_index)
+
+            # get the ptf port that is connected to the bridge
+            active_active_vmhost_ptf_port = "iaa-%s-%d" % (self.tbinfo["group-name"], src_ptf_port_index)
+
+            # get the dut ports that is connected to the bridge
+            list_ports_res = self.vmhost.shell("ovs-vsctl list-ports %s" % active_active_vmhost_bridge)
+            bridge_ports = list_ports_res["stdout_lines"]
+
+            # On a KVM testbed each ToR port is a tap named after the DUT itself
+            # (sonic.xml.j2 names them <dut_name>-<port number>), so the port of the
+            # target ToR can be picked directly and no ordering assumption is needed.
+            for port in bridge_ports:
+                if port.startswith("%s-" % self.duthost.hostname):
+                    vmhost_target_dut_port = port
+                    break
+            else:
+                # On a physical testbed the ToR ports are VLAN subinterfaces of the
+                # server NIC (<port>.<vlan id>) and carry no DUT name, so fall back to
+                # picking them by order.
+                active_active_vmhost_dut_ports = [port for port in bridge_ports if "." in port]
+
+                # NOTE: Let's assume that the upper ToR's port is always ending with
+                # smaller vlan suffix, so active_active_vmhost_dut_ports[0] is connected
+                # to the upper ToR and active_active_vmhost_dut_ports[1] is connected
+                # to the lower ToR.
+                active_active_vmhost_dut_ports.sort()
+                for dut, vmhost_dut_port in zip(self.tbinfo["duts"], active_active_vmhost_dut_ports):
+                    if self.duthost.hostname == dut:
+                        vmhost_target_dut_port = vmhost_dut_port
+                        break
+                else:
+                    raise ValueError(
+                        "Failed to find the port connected to DUT %s in bridge %s, ports are %s" %
+                        (self.duthost.hostname, active_active_vmhost_bridge, bridge_ports)
+                    )
+
+            get_ovs_port_no_res = self.vmhost.shell("ovs-vsctl get Interface %s ofport" % vmhost_target_dut_port)
+            vmhost_target_dut_port_no = get_ovs_port_no_res["stdout"].strip()
+
+            trace_command = ("ovs-appctl ofproto/trace {bridge} in_port={port},tcp,"
+                             "eth_src={eth_src},eth_dst={eth_dst},ip_src={ip_src},"
+                             "ip_dst={ip_dst},tp_src={{tp_src}},tp_dst={tp_dst}").format(
+                                 bridge=active_active_vmhost_bridge,
+                                 port=active_active_vmhost_ptf_port,
+                                 eth_src=packet[scapyall.Ether].src,
+                                 eth_dst=packet[scapyall.Ether].dst,
+                                 ip_src=packet[scapyall.IP].src,
+                                 ip_dst=packet[scapyall.IP].dst,
+                                 tp_dst=packet[scapyall.TCP].dport)
+            sport_upper = min(65535, self.tcp_sport + 100)
+            for tcp_sport in range(tcp_packet[scapyall.TCP].sport, sport_upper):
+                trace_res = self.vmhost.shell(trace_command.format(tp_src=tcp_sport))
+                if "output:%s" % vmhost_target_dut_port_no in trace_res["stdout"]:
+                    packet[scapyall.TCP].sport = tcp_sport
+                    self.tcp_sport = tcp_sport
+                    packet[scapyall.TCP].chksum = None
+                    packet[scapyall.IP].chksum = None
+                    break
+            else:
+                raise ValueError("Failed to generate packet destinated to target DUT %s" % self.duthost.hostname)
+
+        return packet
+
+    def generate_server_to_server_traffic(self):
+        """
+        @summary: Generate (not send) the packets to be sent from server to server
+        """
+        logger.info("Generate server to server packets")
+        if not self.tor_vlan_intf or len(self.tor_vlan_intf) != 2:
+            raise ValueError("No vlan interfaces specified.")
+
+        vlan_src_intf, vlan_dst_intf = self.tor_vlan_intf
+        ptf_intf_to_ip_map = self.ptf_intf_to_server_ip_map
+
+        logger.info("-"*20 + "server to server packet" + "-"*20)
+        src_ptf_port = self.tor_to_ptf_intf_map[vlan_src_intf]
+        src_mac = self.ptf_intf_to_mac_map[src_ptf_port]
+        src_ip = ptf_intf_to_ip_map[src_ptf_port]
+        dst_ptf_port = self.tor_to_ptf_intf_map[vlan_dst_intf]
+        dst_ip = ptf_intf_to_ip_map[dst_ptf_port]
+        logger.info("Ethernet address: dst: {} src: {}".format(self.vlan_mac, src_mac))
+        logger.info("IP address: dst: {} src: {}".format(dst_ip, src_ip))
+        logger.info("TCP port: dst: {} src: {}".format(TCP_DST_PORT, self.tcp_sport))
+        logger.info("DUT ToR MAC: {}, PEER ToR MAC: {}".format(self.active_mac, self.standby_mac))
+        logger.info("VLAN MAC: {}".format(self.vlan_mac))
+        logger.info("-"*50)
+
+        self.packets_list = []
+        tcp_tx_packet_orig = testutils.simple_tcp_packet(
+            eth_dst=self.vlan_mac,
+            tcp_dport=TCP_DST_PORT,
+            tcp_sport=self.tcp_sport
+        )
+        tcp_tx_packet_orig = scapyall.Ether(convert_scapy_packet_to_bytes(tcp_tx_packet_orig))
+        tcp_tx_packet_orig[scapyall.Ether].src = src_mac
+        tcp_tx_packet_orig[scapyall.IP].src = src_ip
+        tcp_tx_packet_orig[scapyall.IP].dst = dst_ip
+        tcp_tx_packet_orig = self._generate_upstream_packet_to_target_duthost(vlan_src_intf, tcp_tx_packet_orig)
+
+        payload_suffix = "X" * 60
+        for i in range(self.packets_per_server):
+            payload = str(i) + payload_suffix
+            packet = tcp_tx_packet_orig.copy()
+            packet.load = payload
+            packet[scapyall.TCP].chksum = None
+            packet[scapyall.IP].chksum = None
+            self.packets_list.append((src_ptf_port, convert_scapy_packet_to_bytes(packet)))
+
+        self.sent_pkt_dst_mac = self.vlan_mac
+        self.received_pkt_src_mac = [self.vlan_mac]
 
     def random_host_ip(self):
         """
@@ -452,8 +587,8 @@ class DualTorIO:
         self.sniff_timeout = self.time_to_listen + self.sniff_time_incr
         self.sniffer_start = datetime.datetime.now()
         logger.info("Sniffer started at {}".format(str(self.sniffer_start)))
-        self.sniff_filter = "tcp and tcp dst port {} and tcp src port 1234 and not icmp".\
-            format(TCP_DST_PORT)
+        self.sniff_filter = "tcp and tcp dst port {} and tcp src port {} and not icmp".\
+            format(TCP_DST_PORT, self.tcp_sport)
 
         # We run a PTF script on PTF to sniff traffic. The PTF script calls
         # scapy.sniff which by default capture the backplane interface for
@@ -466,12 +601,17 @@ class DualTorIO:
         # filter to filter out all the packets destined to the PTF backplane interface.
         output = self.ptfhost.shell('cat /sys/class/net/backplane/address',
                                     module_ignore_errors=True)
-        if not output['failed']:
+        if not output.get('failed', False):
             ptf_bp_mac = output['stdout']
             self.sniff_filter = '({}) and (not ether dst {})'.format(self.sniff_filter, ptf_bp_mac)
 
         self.capture_pcap = '/tmp/capture.pcap'
         self.capture_log = '/tmp/capture.log'
+
+        # Do some cleanup first
+        self.ptfhost.file(path=self.capture_pcap, state="absent")
+        if os.path.exists(self.capture_pcap):
+            os.unlink(self.capture_pcap)
 
         self.setup_ptf_sniffer()
         self.start_ptf_sniffer()
@@ -512,7 +652,7 @@ class DualTorIO:
         sent_packets_count = 0
         for entry in self.packets_list:
             _, packet = entry
-            server_addr = self.get_server_address(scapyall.Ether(str(packet)))
+            server_addr = self.get_server_address(scapyall.Ether(convert_scapy_packet_to_bytes(packet)))
             time.sleep(self.send_interval)
             # the stop_early flag can be set to True by data_plane_utils to stop prematurely
             if self.stop_early:
@@ -541,6 +681,8 @@ class DualTorIO:
             server_addr = packet[scapyall.IP].dst
         elif self.traffic_direction == "soc_to_t1":
             server_addr = packet[scapyall.IP].src
+        elif self.traffic_direction == "server_to_server":
+            server_addr = packet[scapyall.IP].src
         return server_addr
 
     def get_test_results(self):
@@ -567,7 +709,7 @@ class DualTorIO:
         filtered_packets = [pkt for pkt in self.all_packets if
                             scapyall.TCP in pkt and
                             scapyall.ICMP not in pkt and
-                            pkt[scapyall.TCP].sport == 1234 and
+                            pkt[scapyall.TCP].sport == self.tcp_sport and
                             pkt[scapyall.TCP].dport == TCP_DST_PORT and
                             self.check_tcp_payload(pkt) and
                             (
@@ -577,7 +719,6 @@ class DualTorIO:
         logger.info("Number of filtered packets captured: {}".format(len(filtered_packets)))
         if not filtered_packets or len(filtered_packets) == 0:
             logger.error("Sniffer failed to capture any traffic")
-            return
 
         server_to_packet_map = defaultdict(list)
 
@@ -586,13 +727,19 @@ class DualTorIO:
             server_addr = self.get_server_address(packet)
             server_to_packet_map[server_addr].append(packet)
 
+        # E731 Use a def instead of a lambda
+        def get_packet_sort_key(packet):
+            payload_bytes = convert_scapy_packet_to_bytes(packet[scapyall.TCP].payload)
+            if six.PY2:
+                payload_int = int(payload_bytes.replace('X', ''))
+            else:
+                payload_int = int(payload_bytes.decode().replace('X', ''))
+            return (payload_int, packet.time)
+
         # For each server's packet list, sort by payload then timestamp
         # (in case of duplicates)
         for server in list(server_to_packet_map.keys()):
-            server_to_packet_map[server].sort(
-                key=lambda packet: (int(str(packet[scapyall.TCP].payload).replace('X', '')),
-                                    packet.time)
-            )
+            server_to_packet_map[server].sort(key=get_packet_sort_key)
 
         logger.info("Measuring traffic disruptions...")
         for server_ip, packet_list in list(server_to_packet_map.items()):
@@ -627,7 +774,11 @@ class DualTorIO:
                 # scapy 2.4.5 will use Decimal to calulcate time, but json.dumps
                 # can't recognize Decimal, transform to float here
                 curr_time = float(packet.time)
-                curr_payload = int(str(packet[scapyall.TCP].payload).replace('X', ''))
+                curr_payload_bytes = convert_scapy_packet_to_bytes(packet[scapyall.TCP].payload)
+                if six.PY2:
+                    curr_payload = int(curr_payload_bytes.replace('X', ''))
+                else:
+                    curr_payload = int(curr_payload_bytes.decode().replace('X', ''))
 
                 # Look back at the previous received packet to check for gaps/duplicates
                 # Only if we've already received some packets
@@ -655,16 +806,37 @@ class DualTorIO:
             logger.error("Sniffer failed to filter any traffic from DUT")
         else:
             # Find ranges of consecutive packets that have been duplicated
-            # All packets within the same consecutive range will have the same
-            # difference between the packet index and the sequence number
-            for _, grouper in groupby(enumerate(duplicate_packet_list), lambda t: t[0] - t[1][0]):
-                group = list(map(itemgetter(1), grouper))
-                duplicate_start, duplicate_end = group[0], group[-1]
+            # All consecutive packets with the same payload will be grouped as one
+            # duplication group.
+            # For example, for the duplication list as the following:
+            # [(70, 1744253633.499116), (70, 1744253633.499151), (70, 1744253633.499186),
+            #  (81, 1744253635.49922), (81, 1744253635.499255)]
+            # two duplications will be reported:
+            # "duplications": [
+            #     {
+            #         "start_time": 1744253633.499116,
+            #         "end_time": 1744253633.499186,
+            #         "start_id": 70,
+            #         "end_id": 70,
+            #         "duplication_count": 3
+            #     },
+            #     {
+            #         "start_time": 1744253635.49922,
+            #         "end_time": 1744253635.499255,
+            #         "start_id": 81,
+            #         "end_id": 81,
+            #         "duplication_count": 2
+            #     }
+            # ]
+            for _, grouper in groupby(duplicate_packet_list, lambda d: d[0]):
+                duplicates = list(grouper)
+                duplicate_start, duplicate_end = duplicates[0], duplicates[-1]
                 duplicate_dict = {
                     'start_time': duplicate_start[1],
                     'end_time': duplicate_end[1],
                     'start_id': duplicate_start[0],
-                    'end_id': duplicate_end[0]
+                    'end_id': duplicate_end[0],
+                    'duplication_count': len(duplicates)
                 }
                 duplicate_ranges.append(duplicate_dict)
 
@@ -704,8 +876,13 @@ class DualTorIO:
             sequential TCP Payload
         """
         try:
-            int(str(packet[scapyall.TCP].payload).replace('X', '')) in range(
-                self.packets_to_send)
+            payload_bytes = convert_scapy_packet_to_bytes(packet[scapyall.TCP].payload)
+            if six.PY2:
+                int(payload_bytes.replace('X', '')) in range(
+                    self.packets_to_send)
+            else:
+                int(payload_bytes.decode().replace('X', '')) in range(
+                    self.packets_to_send)
             return True
         except Exception:
             return False

@@ -1,12 +1,9 @@
-import pexpect
 import logging
-import time
-import re
 import pytest
 
-from tests.common.helpers.assertions import pytest_assert
 
 TOTAL_PACKETS = 100
+packet_number = 10
 logger = logging.getLogger(__name__)
 
 pytestmark = [
@@ -14,10 +11,10 @@ pytestmark = [
 ]
 
 
-def test_console_escape(duthost_console, duthost):
-    child = pexpect.spawn("ping 127.0.0.1 -c {} -i 1".format(TOTAL_PACKETS))
-    time.sleep(5)
-    child.sendcontrol('C')
-    child.expect(r"\^C")
-    match = re.search(r'(\d) packets transmitted', child.read())
-    pytest_assert(int(match.group(1)) < TOTAL_PACKETS, "Escape Character does not work.")
+def test_console_escape(duthost_console):
+    duthost_console.send_command("ping 127.0.0.1 -c {} -i 1".format(TOTAL_PACKETS),
+                                 expect_string=r"icmp_seq={}".format(packet_number))
+    # Send interrupt character directly
+    duthost_console.write_channel("\x03")
+    # Matching the expected output content
+    duthost_console.read_until_pattern(pattern=r"{} packets transmitted".format(packet_number))

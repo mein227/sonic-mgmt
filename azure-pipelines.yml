@@ -7,281 +7,232 @@
 # continueOnError: false means it's a required test job and will block merge if it fails
 # continueOnError: true means it's an optional test job and will not block merge even though it fails(unless a required test job depends on its result)
 
+# For PR test job:
+# If the current branch is not master, please reference the remote template by appending @sonic-mgmt.
+# For example, "- template: .azure-pipelines/run-test-elastictest-template.yml@sonic-mgmt"
+
 pr:
    branches:
      include:
        - master
+       - 202???
    paths:
      exclude:
        - .github
-trigger: none
+       - docs
+       - LICENSE
+       - README.md
+       - SECURITY.md
+       - sdn_tests/**
+       - '**/*.md'
+trigger:
+  branches:
+    include:
+      - gh-readonly-queue/*
 
 name: $(TeamProject)_$(Build.DefinitionName)_$(SourceBranchName)_$(Date:yyyyMMdd)$(Rev:.r)
 
+resources:
+  repositories:
+    - repository: sonic-mgmt
+      type: github
+      name: sonic-net/sonic-mgmt
+      ref: master
+      endpoint: sonic-net
+
+
 stages:
-- stage: Test
-
-  variables:
-  - group: Testbed-Tools
-  - name: inventory
-    value: veos_vtb
-  - name: testbed_file
-    value: vtestbed.yaml
-  - group: GIT_SECRETS
-
+- template: /.azure-pipelines/common2/stages/analyze-code.yml
+- template: /.azure-pipelines/probe-tests/stages/probe-tests.yml
+- stage: Pre_test
+  condition: succeededOrFailed()
   jobs:
-  - job: pre_commit
-    displayName: "pre-commit-check"
+  - job: detect_skip_expiry_changes
+    displayName: "Detect skip_expiry changes"
     timeoutInMinutes: 10
-    continueOnError: true
-    pool: ubuntu-20.04
+    continueOnError: false
+    pool: sonic-ubuntu-1c
+    steps:
+    - checkout: self
+      clean: true
+
+    - script: |
+        set -euo pipefail
+
+        TARGET_BRANCH="${SYSTEM_PULLREQUEST_TARGETBRANCH:-refs/heads/master}"
+        TARGET_BRANCH="${TARGET_BRANCH#refs/heads/}"
+
+        git fetch origin "${TARGET_BRANCH}" --depth=1
+        BASE_COMMIT=$(git merge-base "origin/${TARGET_BRANCH}" HEAD || true)
+
+        if [[ -z "${BASE_COMMIT}" ]]; then
+          echo "Unable to determine merge base with origin/${TARGET_BRANCH}; falling back to HEAD~1"
+          BASE_COMMIT="HEAD~1"
+        fi
+
+        CHANGED_FILES=$(git diff --name-only "${BASE_COMMIT}" HEAD -- tools/skip_expiry | tr '\n' ' ')
+        if [[ -n "${CHANGED_FILES}" ]]; then
+          echo "Detected changes under tools/skip_expiry: ${CHANGED_FILES}"
+          echo "##vso[task.setvariable variable=SKIP_EXPIRY_CHANGED;isOutput=true]true"
+        else
+          echo "No changes detected under tools/skip_expiry"
+          echo "##vso[task.setvariable variable=SKIP_EXPIRY_CHANGED;isOutput=true]false"
+        fi
+      name: DetectChanges
+      displayName: "Check changed files under tools/skip_expiry"
+
+  - job: detect_gobgp_shim_changes
+    displayName: "Detect GoBGP shim changes"
+    timeoutInMinutes: 10
+    continueOnError: false
+    pool: sonic-ubuntu-1c
+    steps:
+    - checkout: self
+      clean: true
+
+    - script: |
+        set -euo pipefail
+
+        TARGET_BRANCH="${SYSTEM_PULLREQUEST_TARGETBRANCH:-refs/heads/master}"
+        TARGET_BRANCH="${TARGET_BRANCH#refs/heads/}"
+        SHIM_PATH="ansible/roles/vm_set/files/gobgp"
+
+        # Default to running the tests. A gate that cannot work out its own
+        # base must not drop coverage, and must not fail the pipeline either.
+        CHANGED="true"
+
+        if git fetch origin "${TARGET_BRANCH}" --depth=1 &&
+           BASE_COMMIT=$(git merge-base "origin/${TARGET_BRANCH}" HEAD 2>/dev/null) &&
+           CHANGED_FILES=$(git diff --name-only "${BASE_COMMIT}" HEAD -- "${SHIM_PATH}" | tr '\n' ' '); then
+          if [[ -n "${CHANGED_FILES}" ]]; then
+            echo "Detected changes under ${SHIM_PATH}: ${CHANGED_FILES}"
+          else
+            CHANGED="false"
+            echo "No changes detected under ${SHIM_PATH}"
+          fi
+        else
+          echo "Cannot diff against origin/${TARGET_BRANCH}; running the tests"
+        fi
+
+        echo "##vso[task.setvariable variable=GOBGP_SHIM_CHANGED;isOutput=true]${CHANGED}"
+      name: DetectChanges
+      displayName: "Check changed files under ansible/roles/vm_set/files/gobgp"
+
+  - job: static_analysis
+    displayName: "Static Analysis"
+    timeoutInMinutes: 10
+    continueOnError: false
+    pool:
+      vmImage: ubuntu-latest
     steps:
     - template: .azure-pipelines/pre-commit-check.yml
 
-  - job: t0_part1
-    pool: sonictest
-    displayName: "kvmtest-t0-part1"
-    timeoutInMinutes: 400
-    condition: and(succeeded(), eq(variables.RUN_CLASSICAL_TEST, 'YES'))
+  - job: validate_test_cases
+    displayName: "Validate Test Cases"
+    timeoutInMinutes: 30
     continueOnError: false
+    pool:
+      vmImage: ubuntu-latest
     steps:
-    - template: .azure-pipelines/run-test-template.yml
+    - template: .azure-pipelines/pytest-collect-only.yml
       parameters:
-        dut: vlab-01
-        tbname: vms-kvm-t0
-        ptf_name: ptf_vms6-1
-        tbtype: t0
-        vmtype: ceos
-        section: part-1
+        MGMT_BRANCH: ""
 
-  - job: t0_part2
-    pool: sonictest
-    displayName: "kvmtest-t0-part2"
-    timeoutInMinutes: 400
-    condition: and(succeeded(), eq(variables.RUN_CLASSICAL_TEST, 'YES'))
-    continueOnError: false
+  - job: dependency_check
+    displayName: "Dependency Check"
+    timeoutInMinutes: 10
+    pool:
+      vmImage: ubuntu-latest
     steps:
-    - template: .azure-pipelines/run-test-template.yml
-      parameters:
-        dut: vlab-01
-        tbname: vms-kvm-t0
-        ptf_name: ptf_vms6-1
-        tbtype: t0
-        vmtype: ceos
-        section: part-2
+      - template: .azure-pipelines/dependency-check.yml
 
-  - job: t0_testbedv2
-    displayName: "kvmtest-t0 by TestbedV2"
-    timeoutInMinutes: 240
-    condition: and(succeeded(), eq(variables.RUN_TESTBEDV2_TEST, 'YES'))
-    continueOnError: false
-    pool: ubuntu-20.04
+  - job: markers_check
+    displayName: "Markers Check"
+    timeoutInMinutes: 10
+    pool:
+      vmImage: ubuntu-latest
     steps:
-    - template: .azure-pipelines/run-test-scheduler-template.yml
-      parameters:
-        TOPOLOGY: t0
-        MIN_WORKER: $(T0_INSTANCE_NUM)
-        MAX_WORKER: $(T0_INSTANCE_NUM)
+      - template: .azure-pipelines/markers-check.yml
 
-  - job: t0_2vlans_testbedv2
-    displayName: "kvmtest-t0-2vlans by TestbedV2"
-    timeoutInMinutes: 240
-    condition: and(succeeded(), eq(variables.RUN_TESTBEDV2_TEST, 'YES'))
-    continueOnError: false
-    pool: ubuntu-20.04
+  - job: meta_check
+    displayName: "Meta check"
+    timeoutInMinutes: 10
+    pool:
+      vmImage: ubuntu-latest
     steps:
-    - template: .azure-pipelines/run-test-scheduler-template.yml
-      parameters:
-        TOPOLOGY: t0
-        TEST_SET: t0-2vlans
-        MIN_WORKER: $(T0_2VLANS_INSTANCE_NUM)
-        MAX_WORKER: $(T0_2VLANS_INSTANCE_NUM)
-        DEPLOY_MG_EXTRA_PARAMS: "-e vlan_config=two_vlan_a"
+      - template: .azure-pipelines/meta-check.yml
 
-  - job:
-    pool: ubuntu-20.04
-    displayName: "kvmtest-t0"
-    dependsOn:
-    - t0_part1
-    - t0_part2
-    - t0_testbedv2
-    - t0_2vlans_testbedv2
-    condition: always()
+
+- stage: Skip_Expiry_Unit_Tests
+  displayName: "Skip Expiry Unit Tests"
+  dependsOn: Pre_test
+  condition: >-
+    and(
+      succeeded(),
+      not(canceled()),
+      eq(dependencies.Pre_test.outputs['detect_skip_expiry_changes.DetectChanges.SKIP_EXPIRY_CHANGED'], 'true')
+    )
+  jobs:
+  - job: run_skip_expiry_unit_tests
+    displayName: "Run tools/skip_expiry unit tests"
+    timeoutInMinutes: 15
     continueOnError: false
-    variables:
-      resultOfPart1: $[ dependencies.t0_part1.result ]
-      resultOfPart2: $[ dependencies.t0_part2.result ]
-      resultOfT0TestbedV2: $[ dependencies.t0_testbedv2.result ]
-      resultOfT02VlansTestbedV2: $[ dependencies.t0_2vlans_testbedv2.result ]
-
+    pool: sonic-ubuntu-1c
     steps:
+    - checkout: self
+      clean: true
+
     - script: |
-        if [ $(resultOfT0TestbedV2) == "Succeeded" ] && [ $(resultOfT02VlansTestbedV2) == "Succeeded" ]; then
-          echo "TestbedV2 t0 passed."
-          exit 0
-        fi
+        set -euo pipefail
+        sudo uv pip install --system pytest requests PyYAML
+      displayName: "Install unit test dependencies"
 
-        if [ $(resultOfPart1) == "Succeeded" ] && [ $(resultOfPart2) == "Succeeded" ]; then
-          echo "Classic t0 jobs(both part1 and part2) passed."
-          exit 0
-        fi
-
-        echo "Both classic and TestbedV2 t0 jobs failed! Please check the detailed information. (Any of them passed, t0 will be considered as passed)"
-        exit 1
-
-
-  - job: t1_lag_classic
-    pool: sonictest-t1-lag
-    displayName: "kvmtest-t1-lag classic"
-    timeoutInMinutes: 400
-    condition: and(succeeded(), eq(variables.RUN_CLASSICAL_TEST, 'YES'))
-    continueOnError: false
-    steps:
-    - template: .azure-pipelines/run-test-template.yml
-      parameters:
-        dut: vlab-03
-        tbname: vms-kvm-t1-lag
-        ptf_name: ptf_vms6-2
-        tbtype: t1-lag
-        vmtype: ceos
-
-  - job: t1_lag_testbedv2
-    displayName: "kvmtest-t1-lag by TestbedV2"
-    timeoutInMinutes: 240
-    condition: and(succeeded(), eq(variables.RUN_TESTBEDV2_TEST, 'YES'))
-    continueOnError: false
-    pool: ubuntu-20.04
-    steps:
-    - template: .azure-pipelines/run-test-scheduler-template.yml
-      parameters:
-        TOPOLOGY: t1-lag
-        MIN_WORKER: $(T1_LAG_INSTANCE_NUM)
-        MAX_WORKER: $(T1_LAG_INSTANCE_NUM)
-
-  - job:
-    displayName: "kvmtest-t1-lag"
-    dependsOn:
-    - t1_lag_classic
-    - t1_lag_testbedv2
-    condition: always()
-    continueOnError: false
-    pool: ubuntu-20.04
-    variables:
-      resultOfClassic: $[ dependencies.t1_lag_classic.result ]
-      resultOfTestbedV2: $[ dependencies.t1_lag_testbedv2.result ]
-    steps:
     - script: |
-        if [ $(resultOfClassic) == "Succeeded" ] || [ $(resultOfTestbedV2) == "Succeeded" ]; then
-          echo "One or both of t1_lag_classic and t1_lag_testbedv2 passed."
-          exit 0
-        else
-          echo "Both t1_lag_classic and t1_lag_testbedv2 failed! Please check the detailed information."
-          exit 1
-        fi
+        set -euo pipefail
+        python -m pytest tools/skip_expiry/tests/unit_test_*.py -q
+      displayName: "Run skip_expiry unit tests"
 
-  - job:
-    pool: sonictest-sonic-t0
-    displayName: "kvmtest-t0-sonic"
-    timeoutInMinutes: 400
-    condition: and(succeeded(), eq(variables.RUN_CLASSICAL_TEST, 'YES'))
-    continueOnError: true
-    steps:
-    - template: .azure-pipelines/run-test-template.yml
-      parameters:
-        dut: vlab-02
-        tbname: vms-kvm-t0-64-32
-        ptf_name: ptf_vms6-1
-        tbtype: t0-sonic
-        vmtype: vsonic
 
-  - job: sonic_t0_testbedv2
-    displayName: "kvmtest-t0-sonic by TestbedV2"
-    timeoutInMinutes: 240
-    condition: and(succeeded(), eq(variables.RUN_TESTBEDV2_TEST, 'YES'))
+- stage: GoBGP_Shim_Unit_Tests
+  displayName: "GoBGP Shim Unit Tests"
+  dependsOn: Pre_test
+  condition: >-
+    and(
+      succeeded(),
+      not(canceled()),
+      eq(dependencies.Pre_test.outputs['detect_gobgp_shim_changes.DetectChanges.GOBGP_SHIM_CHANGED'], 'true')
+    )
+  jobs:
+  - job: run_gobgp_shim_unit_tests
+    displayName: "Run GoBGP shim unit tests"
+    timeoutInMinutes: 15
     continueOnError: false
-    pool: ubuntu-20.04
+    pool: sonic-ubuntu-1c
     steps:
-      - template: .azure-pipelines/run-test-scheduler-template.yml
-        parameters:
-          TOPOLOGY: t0-64-32
-          MIN_WORKER: $(T0_SONIC_INSTANCE_NUM)
-          MAX_WORKER: $(T0_SONIC_INSTANCE_NUM)
-          TEST_SET: t0-sonic
-          COMMON_EXTRA_PARAMS: "--neighbor_type=sonic --enable_macsec --macsec_profile=128_SCI,256_XPN_SCI"
-          VM_TYPE: vsonic
-          SPECIFIED_PARAMS: '{\"test_pretest.py\":[\"--completeness_level=confident\",\"--allow_recover\"],\"test_posttest.py\":[\"--completeness_level=confident\",\"--allow_recover\"]}'
+    - checkout: self
+      clean: true
+
+    - script: |
+        set -euo pipefail
+        sudo uv pip install --system pytest
+      displayName: "Install unit test dependencies"
+
+    - script: |
+        set -euo pipefail
+        python -m pytest ansible/roles/vm_set/files/gobgp/tests -q -rs
+      displayName: "Run GoBGP shim unit tests"
 
 
-  - job:
-    pool: sonictest-dualtor
-    displayName: "kvmtest-dualtor"
-    timeoutInMinutes: 400
-    condition: and(succeeded(), eq(variables.RUN_CLASSICAL_TEST, 'YES'))
-    continueOnError: false
-    steps:
-      - template: .azure-pipelines/run-test-template.yml
-        parameters:
-          dut: all
-          tbname: vms-kvm-dual-t0
-          ptf_name: ptf-04
-          tbtype: dualtor
-          vmtype: ceos
+- stage: Test
+  dependsOn: Pre_test
+  condition: and(succeeded(), not(canceled()), in(dependencies.Pre_test.result, 'Succeeded'), not(startsWith(variables['Build.SourceBranch'], 'refs/heads/gh-readonly-queue/')))
+  variables:
+  - group: SONiC-Elastictest
+  - name: BUILD_BRANCH
+    ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+      value: $(System.PullRequest.TargetBranch)
+    ${{ else }}:
+      value: $(Build.SourceBranchName)
 
-  - job: dualtor_testbedv2
-    displayName: "kvmtest-dualtor-t0 by TestbedV2"
-    timeoutInMinutes: 240
-    condition: and(succeeded(), eq(variables.RUN_TESTBEDV2_TEST, 'YES'))
-    continueOnError: false
-    pool: ubuntu-20.04
-    steps:
-      - template: .azure-pipelines/run-test-scheduler-template.yml
-        parameters:
-          TOPOLOGY: dualtor
-          MIN_WORKER: $(T0_DUALTOR_INSTANCE_NUM)
-          MAX_WORKER: $(T0_DUALTOR_INSTANCE_NUM)
-          COMMON_EXTRA_PARAMS: "--disable_loganalyzer "
-
-  - job:
-    pool: sonictest-ma
-    displayName: "kvmtest-multi-asic-t1-lag"
-    timeoutInMinutes: 400
-    condition: and(succeeded(), eq(variables.RUN_CLASSICAL_TEST, 'YES'))
-    continueOnError: false
-    steps:
-      - template: .azure-pipelines/run-test-template.yml
-        parameters:
-          dut: vlab-08
-          tbname: vms-kvm-four-asic-t1-lag
-          ptf_name: ptf_vms6-4
-          tbtype: multi-asic-t1-lag-pr
-          vmtype: ceos
-          image: sonic-4asic-vs.img.gz
-
-  - job: multi_asic_testbedv2
-    displayName: "kvmtest-multi-asic-t1-lag by TestbedV2"
-    timeoutInMinutes: 240
-    condition: and(succeeded(), eq(variables.RUN_TESTBEDV2_TEST, 'YES'))
-    continueOnError: false
-    pool: ubuntu-20.04
-    steps:
-      - template: .azure-pipelines/run-test-scheduler-template.yml
-        parameters:
-          TOPOLOGY: t1-8-lag
-          TEST_SET: multi-asic-t1-lag
-          MIN_WORKER: $(MULTI_ASIC_INSTANCE_NUM)
-          MAX_WORKER: $(MULTI_ASIC_INSTANCE_NUM)
-          NUM_ASIC: 4
-
-  - job: wan_testbedv2
-    displayName: "kvmtest-wan by TestbedV2"
-    timeoutInMinutes: 240
-    condition: and(succeeded(), eq(variables.RUN_TESTBEDV2_TEST, 'YES'))
-    continueOnError: false
-    pool: ubuntu-20.04
-    steps:
-      - template: .azure-pipelines/run-test-scheduler-template.yml
-        parameters:
-          TOPOLOGY: wan-pub
-          MIN_WORKER: $(WAN_INSTANCE_NUM)
-          MAX_WORKER: $(WAN_INSTANCE_NUM)
-          COMMON_EXTRA_PARAMS: "--skip_sanity "
+  jobs:
+    - template: .azure-pipelines/pr_test_template.yml

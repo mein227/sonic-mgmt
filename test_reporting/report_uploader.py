@@ -54,6 +54,13 @@ python3 report_uploader.py tests/files/sample_tr.xml -e TRACKING_ID#22
     parser.add_argument(
         "--testbed", "-t", type=str, help="Name of testbed."
     )
+    parser.add_argument(
+        "--auth_method", "-a", type=str,
+        choices=["appKey", "managedId", "interactive", "azureCli",
+                 "deviceCode", "userToken", "appToken", "defaultCred"],
+        default="appKey",
+        help="Authentication method for Kusto connection."
+    )
     os_version = parser.add_mutually_exclusive_group(required=False)
     os_version.add_argument(
         "--image_url", "-i", type=str,
@@ -65,7 +72,14 @@ python3 report_uploader.py tests/files/sample_tr.xml -e TRACKING_ID#22
     )
 
     args = parser.parse_args()
-    kusto_db = KustoConnector(args.db_name)
+
+    try:
+        kusto_db = KustoConnector(args.db_name, args.auth_method)
+    except Exception as e:
+        print(f"Failed to create KustoConnector: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
     if args.category == "test_result":
         tracking_id = args.external_id if args.external_id else ""
@@ -78,50 +92,75 @@ python3 report_uploader.py tests/files/sample_tr.xml -e TRACKING_ID#22
         else:
             version = "UNKNOWN"
         for path_name in args.path_list:
-            reboot_data_regex = re.compile(
-                '.*test.*_(reboot|sad.*|upgrade_path)_(summary|report).json')
-            if reboot_data_regex.match(path_name):
-                kusto_db.upload_reboot_report(path_name, report_guid)
-            else:
-                if args.json:
-                    test_result_json = validate_junit_json_file(path_name)
+            try:
+                reboot_data_regex = re.compile(
+                    '.*test.*_(reboot|sad|upgrade_path).*_(summary|report).json')
+                if reboot_data_regex.match(path_name):
+                    kusto_db.upload_reboot_report(path_name, tracking_id, report_guid)
                 else:
-                    roots = validate_junit_xml_path(path_name)
-                    test_result_json = parse_test_result(roots)
-                kusto_db.upload_report(
-                    test_result_json, tracking_id, report_guid, testbed, version)
+                    if args.json:
+                        test_result_json = validate_junit_json_file(path_name)
+                    else:
+                        roots = validate_junit_xml_path(path_name)
+                        test_result_json = parse_test_result(roots)
+                    kusto_db.upload_report(test_result_json, tracking_id, report_guid, testbed, version)
+            except Exception as e:
+                print(f"Failed to upload report '{path_name}', exception: {repr(e)}")
+                import traceback
+                traceback.print_exc()
     elif args.category == "reachability":
         reachability_data = []
         for path_name in args.path_list:
-            with open(path_name) as f:
-                reachability_data.extend(json.load(f))
+            try:
+                with open(path_name) as f:
+                    reachability_data.extend(json.load(f))
+            except Exception as e:
+                print("Failed to parse reachability data '{}', exception: {}".format(path_name, repr(e)))
 
         kusto_db.upload_reachability_data(reachability_data)
     elif args.category == "pdu_status":
         pdu_data = []
         for path_name in args.path_list:
-            with open(path_name) as f:
-                pdu_data.extend(json.load(f))
+            try:
+                with open(path_name) as f:
+                    pdu_data.extend(json.load(f))
+            except Exception as e:
+                print("Failed to parse pdu status data '{}', exception: {}".format(path_name, repr(e)))
 
         kusto_db.upload_pdu_status_data(pdu_data)
     elif args.category == 'expected_runs':
         expected_runs = []
         for path_name in args.path_list:
-            with open(path_name) as f:
-                expected_runs.extend(json.load(f))
+            try:
+                with open(path_name) as f:
+                    expected_runs.extend(json.load(f))
+            except Exception as e:
+                print("Failed to parse expected runs data '{}', exception: {}".format(path_name, repr(e)))
         kusto_db.upload_expected_runs(expected_runs)
+    elif args.category == 'case_numbers':
+        case_numbers = []
+        for path_name in args.path_list:
+            with open(path_name) as f:
+                case_numbers.extend(json.load(f))
+        kusto_db.upload_case_numbers(case_numbers)
     elif args.category == "case_invoc":
         for path_name in args.path_list:
             fns = os.listdir(path_name)
             count = 0
             for fn in fns:
-                fn = os.path.join(path_name, fn)
-                kusto_db._upload_case_invoc_report_file(fn)
-                count += 1
-                print("Ingested file {}, {}/{}".format(fn, count, len(fns)))
+                try:
+                    fn = os.path.join(path_name, fn)
+                    kusto_db._upload_case_invoc_report_file(fn)
+                    count += 1
+                    print("Ingested file {}, {}/{}".format(fn, count, len(fns)))
+                except Exception as e:
+                    print("Failed to ingest file '{}', exception: {}".format(fn, repr(e)))
     elif args.category == "sai_header_def":
         for path_name in args.path_list:
-            kusto_db.upload_sai_header_def_report_file(path_name)
+            try:
+                kusto_db.upload_sai_header_def_report_file(path_name)
+            except Exception as e:
+                print("Failed to ingest file '{}', exception: {}".format(path_name, repr(e)))
 
     else:
         print('Unknown category "{}"'.format(args.category))

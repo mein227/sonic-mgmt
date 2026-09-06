@@ -1,32 +1,44 @@
 import logging
 import pytest
+import os
+import sys
 
 from tests.common.helpers.assertions import pytest_assert as py_assert
-from tests.common.utilities import wait_until, wait_tcp_connection
-from telemetry_utils import get_list_stdout, setup_telemetry_forpyclient, restore_telemetry_forpyclient
+from tests.common.utilities import wait_until
+from tests.telemetry.telemetry_utils import get_list_stdout
+from tests.common.helpers.telemetry_helper import setup_streaming_telemetry_context
+from tests.common.helpers.gnmi_utils import GNMIEnvironment
+
+EVENTS_TESTS_PATH = "./telemetry/events"
+sys.path.append(EVENTS_TESTS_PATH)
+
+BASE_DIR = "logs/telemetry"
+DATA_DIR = os.path.join(BASE_DIR, "files")
 
 logger = logging.getLogger(__name__)
 
-TELEMETRY_PORT = 50051
+
+@pytest.fixture
+def skip_non_container_test(request):
+    container_test = request.config.getoption("--container_test", default="")
+    if not container_test:
+        pytest.skip("Testcase skipped for non container test")
 
 
-@pytest.fixture(scope="module")
-def gnxi_path(ptfhost):
+@pytest.fixture(scope="module", autouse=True)
+def setup_user_auth(duthosts, enum_rand_one_per_hwsku_hostname):
     """
-    gnxi's location is updated from /gnxi to /root/gnxi
-    in RP https://github.com/sonic-net/sonic-buildimage/pull/10599.
-    But old docker-ptf images don't have this update,
-    test case will fail for these docker-ptf images,
-    because it should still call /gnxi files.
-    For avoiding this conflict, check gnxi path before test and set GNXI_PATH to correct value.
-    Add a new gnxi_path module fixture to make sure to set GNXI_PATH before test.
+    Setup user authentication for telemetry tests
     """
-    path_exists = ptfhost.stat(path="/root/gnxi/")
-    if path_exists["stat"]["exists"] and path_exists["stat"]["isdir"]:
-        gnxipath = "/root/gnxi/"
-    else:
-        gnxipath = "/gnxi/"
-    return gnxipath
+    duthost = duthosts[enum_rand_one_per_hwsku_hostname]
+    env = GNMIEnvironment(duthost, GNMIEnvironment.TELEMETRY_MODE)
+    duthost.shell('sonic-db-cli CONFIG_DB hset "%s|gnmi" user_auth none' % (env.gnmi_config_table),
+                  module_ignore_errors=False)
+    duthost.shell('config save -y', module_ignore_errors=False)
+    yield
+    duthost.shell('sonic-db-cli CONFIG_DB hdel "%s|gnmi" user_auth' % (env.gnmi_config_table),
+                  module_ignore_errors=False)
+    duthost.shell('config save -y', module_ignore_errors=False)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -35,32 +47,56 @@ def verify_telemetry_dockerimage(duthosts, enum_rand_one_per_hwsku_hostname):
     """
     docker_out_list = []
     duthost = duthosts[enum_rand_one_per_hwsku_hostname]
-    docker_out = duthost.shell('docker images docker-sonic-telemetry', module_ignore_errors=False)['stdout_lines']
+    docker_out = duthost.shell('docker images', module_ignore_errors=False)['stdout_lines']
     docker_out_list = get_list_stdout(docker_out)
-    matching = [s for s in docker_out_list if b"docker-sonic-telemetry" in s]
+    matching = [s for s in docker_out_list if b"docker-sonic-gnmi" in s or b"docker-sonic-telemetry" in s]
     if not (len(matching) > 0):
-        pytest.skip("docker-sonic-telemetry is not part of the image")
+        pytest.skip("docker-sonic-gnmi and docker-sonic-telemetry are not part of the image")
 
 
 @pytest.fixture(scope="module")
-def setup_streaming_telemetry(duthosts, enum_rand_one_per_hwsku_hostname, localhost,  ptfhost, gnxi_path):
+def setup_streaming_telemetry(request, duthosts, enum_rand_one_per_hwsku_hostname, localhost, ptfhost, gnxi_path):
+    is_ipv6 = request.param
+    with setup_streaming_telemetry_context(is_ipv6, duthosts[enum_rand_one_per_hwsku_hostname],
+                                           localhost, ptfhost, gnxi_path) as result:
+        yield result
+
+
+def do_init(duthost):
+    for i in [BASE_DIR, DATA_DIR]:
+        try:
+            os.makedirs(i, exist_ok=True)
+        except OSError as e:
+            logger.error("Unexpected error while creating directory: {}".format(e))
+
+    # Copy validate_yang_events.py from sonic-mgmt to DUT
+    duthost.copy(src="telemetry/validate_yang_events.py", dest="~/")
+
+
+@pytest.fixture(scope="module")
+def test_eventd_healthy(duthosts, tbinfo, enum_rand_one_per_hwsku_hostname, ptfhost, ptfadapter,
+                        setup_streaming_telemetry, gnxi_path):
     """
-    @summary: Post setting up the streaming telemetry before running the test.
+    @summary: Test eventd heartbeat before testing all testcases
     """
+
     duthost = duthosts[enum_rand_one_per_hwsku_hostname]
-    default_client_auth = setup_telemetry_forpyclient(duthost)
 
-    # Wait until telemetry was restarted
-    py_assert(wait_until(100, 10, 0, duthost.is_service_fully_started, "telemetry"), "TELEMETRY not started.")
-    logger.info("telemetry process restarted. Now run pyclient on ptfdocker")
+    if duthost.is_multi_asic:
+        pytest.skip("Skip eventd testing on multi-asic")
 
-    # Wait until the TCP port was opened
-    dut_ip = duthost.mgmt_ip
-    wait_tcp_connection(localhost, dut_ip, TELEMETRY_PORT, timeout_s=60)
+    features_dict, succeeded = duthost.get_feature_status()
+    if succeeded and ('eventd' not in features_dict or features_dict['eventd'] == 'disabled'):
+        pytest.skip("eventd is disabled on the system")
 
-    # pyclient should be available on ptfhost. If it was not available, then fail pytest.
-    file_exists = ptfhost.stat(path=gnxi_path + "gnmi_cli_py/py_gnmicli.py")
-    py_assert(file_exists["stat"]["exists"] is True)
+    do_init(duthost)
 
-    yield
-    restore_telemetry_forpyclient(duthost, default_client_auth)
+    module = __import__("eventd_events")
+
+    duthost.shell("systemctl restart eventd")
+
+    py_assert(wait_until(100, 10, 0, duthost.is_service_fully_started, "eventd"), "eventd not started.")
+
+    module.test_event(duthost, tbinfo, gnxi_path, ptfhost, ptfadapter, DATA_DIR, None)
+
+    logger.info("Completed test file: {}".format("eventd_events test completed."))

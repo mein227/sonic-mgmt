@@ -2,8 +2,8 @@ import pytest
 import os
 import six
 import yaml
-import sys
 import copy
+import pathlib
 
 
 @pytest.fixture(scope="module")
@@ -13,14 +13,46 @@ def conn_graph_facts(duthosts, localhost):
 
 
 @pytest.fixture(scope="module")
-def fanout_graph_facts(localhost, duthosts, rand_one_dut_hostname, conn_graph_facts):
-    duthost = duthosts[rand_one_dut_hostname]
+def fanout_graph_facts(localhost, duthosts, rand_one_tgen_dut_hostname, conn_graph_facts):
+    duthost = duthosts[rand_one_tgen_dut_hostname]
     facts = dict()
     dev_conn = conn_graph_facts.get('device_conn', {})
+    if not dev_conn:
+        return facts
+
+    selected_dut_hostnames = [dh.hostname for dh in duthosts]
     for _, val in list(dev_conn[duthost.hostname].items()):
         fanout = val["peerdevice"]
         if fanout not in facts:
-            facts[fanout] = {k: v[fanout] for k, v in list(get_graph_facts(duthost, localhost, fanout).items())}
+            # Query graph using selected DUT + fanout so linked ports are scoped to selected DUTs.
+            scoped_graph_facts = get_graph_facts(duthost, localhost, selected_dut_hostnames + [fanout])
+            facts[fanout] = {k: v[fanout] for k, v in list(scoped_graph_facts.items()) if fanout in v}
+    return facts
+
+
+@pytest.fixture(scope="module")
+def fanout_graph_facts_multidut(localhost, duthosts, conn_graph_facts):
+    facts = dict()
+    dev_conn = conn_graph_facts.get('device_conn', {})
+    if not dev_conn:
+        return facts
+
+    selected_dut_hostnames = [dh.hostname for dh in duthosts]
+    anchor_duthost = duthosts[0]
+
+    fanout_set = set()
+    for duthost in duthosts:
+        for _, val in list(dev_conn[duthost.hostname].items()):
+            fanout_set.add(val["peerdevice"])
+
+    # Only take IXIA/SNAPPI testers into fanout_facts
+    for fanout in fanout_set:
+        # Query graph using selected DUTs + fanout so linked ports are scoped to selected DUTs.
+        scoped_graph_facts = get_graph_facts(anchor_duthost, localhost, selected_dut_hostnames + [fanout])
+        fanout_data = {k: v[fanout] for k, v in list(scoped_graph_facts.items()) if fanout in v}
+        if fanout_data['device_info']['HwSku'] in ('SNAPPI-tester', 'IXIA-tester'):
+            facts[fanout] = fanout_data
+
     return facts
 
 
@@ -29,6 +61,8 @@ def enum_fanout_graph_facts(localhost, duthosts, enum_rand_one_per_hwsku_fronten
     duthost = duthosts[enum_rand_one_per_hwsku_frontend_hostname]
     facts = dict()
     dev_conn = conn_graph_facts.get('device_conn', {})
+    if not dev_conn:
+        return facts
     for _, val in list(dev_conn[duthost.hostname].items()):
         fanout = val["peerdevice"]
         if fanout not in facts:
@@ -41,48 +75,28 @@ def get_graph_facts(duthost, localhost, hostnames):
     duthost - pytest fixture
     hostnames - can be either a single DUT or a list of multiple DUTs
     """
-    base_path = os.path.dirname(os.path.realpath(__file__))
-    lab_conn_graph_path = os.path.join(base_path, "../../../ansible/files/")
+    ansible_config_path = pathlib.Path(os.getenv("ANSIBLE_CONFIG",
+                                                 pathlib.Path(__file__).resolve().parent.joinpath("../../ansible")))
+    lab_conn_graph_path = os.path.join(ansible_config_path, "files/")
 
-    # BEGINING OF DEPRECATE WARNING:
-    #
-    # conn_graph_facts is able to look up the right graph according to
-    # the hostname(s) passed in from all graph file lists. Therefore the
-    # inv_mapping.yml solution is become redandunt. Please move on to
-    # populate ansible/files/graph_files.yml with all graph files.
-    # The next chunk of code will be deprecated in the future.
-
-    # yaml file contains mapping from inventory file name to its corresponding graph file
-    inv_mapping_file = os.path.join(base_path, "../../../ansible/group_vars/all/inv_mapping.yml")
-    if os.path.exists(inv_mapping_file):
-        with open(inv_mapping_file) as fd:
-            inv_map = yaml.load(fd, Loader=yaml.FullLoader)
-        inv_opt = duthost.host.options['inventory']
-        inv_files = []
-        if isinstance(inv_opt, str):
-            inv_files = [duthost.host.options['inventory']]  # Make it iterable for later use
-        elif isinstance(inv_opt, list) or isinstance(inv_opt, tuple):
-            inv_files = duthost.host.options['inventory']
-
+    inv_files = duthost.host.options["inventory_manager"]._sources
+    graph_groups_file = os.path.join(lab_conn_graph_path, "graph_groups.yml")
+    group = None
+    if os.path.isfile(graph_groups_file):
+        graph_groups = yaml.safe_load(open(graph_groups_file))
         for inv_file in inv_files:
-            inv_file = os.path.basename(inv_file)
-
-            # Loop through the list of inventory files supplied in --inventory argument.
-            # For the first inventory file that has a mapping in inv_mapping.yml, return
-            # its conn_graph_facts.
-            if inv_map and inv_file in inv_map:
-                lab_conn_graph_file = os.path.join(lab_conn_graph_path, inv_map[inv_file])
-                kargs = {"filename": lab_conn_graph_file}
-                if isinstance(hostnames, six.string_types):
-                    kargs["host"] = hostnames
-                elif isinstance(hostnames, (list, tuple)):
-                    kargs["hosts"] = hostnames
-                conn_graph_facts = localhost.conn_graph_facts(
-                    **kargs)["ansible_facts"]
-                return key_convert2str(conn_graph_facts)
-    # END OF DEPRECATE WARNING: deprecate ends here.
+            inv_name = os.path.basename(inv_file)
+            # Try exact match first, then prefix match for trimmed inventory names
+            for graph_group in graph_groups:
+                if (inv_name == graph_group or
+                        (inv_name.startswith("{}_".format(graph_group)) and
+                         inv_name.endswith("_trim_tmp"))):
+                    group = graph_group
+                    break
 
     kargs = {"filepath": lab_conn_graph_path}
+    if group:
+        kargs["group"] = group
     if isinstance(hostnames, six.string_types):
         kargs["host"] = hostnames
     elif isinstance(hostnames, (list, tuple)):
@@ -98,7 +112,7 @@ def key_convert2str(conn_graph_facts):
         Currently, convert the key in conn_graph_facts['device_conn'].
     """
     # If Python2, do not change
-    if sys.version_info[0] < 3:
+    if six.PY2:
         return conn_graph_facts
 
     # Else, convert

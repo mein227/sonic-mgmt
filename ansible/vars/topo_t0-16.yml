@@ -117,13 +117,13 @@ topology:
           prefix_v6: fc02:1000::1/64
           tag: 1000
       two_vlan_a:
-        Vlan100: 
+        Vlan100:
           id: 100
           intfs: [32, 33, 34, 35, 36, 37, 38, 39]
           prefix: 192.168.0.1/22
           prefix_v6: fc02:100::1/64
           tag: 100
-        Vlan200: 
+        Vlan200:
           id: 200
           intfs: [40, 41, 42, 43, 44, 45, 46, 47]
           prefix: 192.168.4.1/22
@@ -281,7 +281,7 @@ configuration:
         ipv6: fc00::82/126
     bp_interface:
       ipv4: 10.10.246.33/24
-      ipv6: fc0a::3a/64
+      ipv6: fc0a::4a/64
 
   ARISTA06T1:
     properties:
@@ -303,4 +303,4 @@ configuration:
         ipv6: fc00::86/126
     bp_interface:
       ipv4: 10.10.246.34/24
-      ipv6: fc0a::3d/64
+      ipv6: fc0a::4d/64
