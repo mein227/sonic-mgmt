@@ -1,0 +1,4 @@
+{
+  "name": "sonic-mgmt dev (lint + unit tests)",
+  "install": "bash ./.cursor/install.sh"
+}
